@@ -39,7 +39,7 @@ The session cookie is HttpOnly and SameSite=Strict. The browser sends `X-Mops-Re
 
 ## Demo users
 
-`npm run seed` prints a password for each person once, plus Ada's authenticator URI.
+`npm run seed` prints Ada's authenticator URI once. Set `DEMO_PASSWORD` in `.env` (12 to 200 characters; see `.env.example`) to give every seeded user that password. Seed then prints a warning that the shared password is for the local demo only. Leave `DEMO_PASSWORD` unset and seed prints a random password for each person once.
 
 - ada.admin@mops.example, Admin/IT, T1, English, Sandbox, TOTP required
 - chris.chen@mops.example, CTO, T2, English, Apollo, Helios, and Nexus
