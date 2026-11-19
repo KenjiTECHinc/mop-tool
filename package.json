@@ -11,6 +11,7 @@
     "dev": "npm run build -w @mops/shared && concurrently -n api,web -c blue,magenta \"npm run dev -w @mops/api\" \"npm run dev -w web\"",
     "build": "npm run build -w @mops/shared && npm run check:i18n && npm run build -w @mops/api && npm run build -w web",
     "test": "npm run build -w @mops/shared && npm run test -w @mops/api",
+    "typecheck": "npm run build -w @mops/shared && npm run typecheck -w @mops/api && tsc -p scripts/tsconfig.json --noEmit && tsc -b apps/web --pretty false",
     "seed": "npm run build -w @mops/shared && tsx scripts/seed.ts",
     "eval": "npm run build -w @mops/shared && tsx scripts/eval.ts",
     "check:aws": "tsx scripts/check-aws.ts",

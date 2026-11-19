@@ -1,14 +1,41 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { DEMO_PASSWORD_WARNING, randomDemoPassword, resolveSeedPassword } from "./seed-password.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+const tsxCli = join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs");
+const seedScript = join(repoRoot, "scripts", "seed.ts");
+
+function seededPasswordLines(stdout: string): string[] {
+  return stdout.split("\n").filter((line) => line.includes("@mops.example") && !line.includes("otpauth://"));
+}
+
+function expectStoredAsArgon2(databasePath: string, plaintext: string) {
+  const db = new Database(databasePath, { readonly: true, fileMustExist: true });
+  try {
+    const rows = db.prepare("SELECT email, password_hash, must_change_password FROM users").all() as Array<{
+      email: string;
+      password_hash: string;
+      must_change_password: number;
+    }>;
+    expect(rows).toHaveLength(6);
+    for (const row of rows) {
+      expect(row.must_change_password).toBe(0);
+      expect(row.password_hash.startsWith("$argon2id$")).toBe(true);
+      expect(row.password_hash).not.toContain(plaintext);
+      expect(row.password_hash).not.toBe(plaintext);
+    }
+  } finally {
+    db.close();
+  }
+}
 
 describe("resolveSeedPassword", () => {
   it("keeps random generation when DEMO_PASSWORD is unset or empty", () => {
@@ -53,27 +80,53 @@ const baseEnv: NodeJS.ProcessEnv = {
   APP_ROLE_ARN: "",
 };
 
-async function runSeed(env: NodeJS.ProcessEnv) {
-  return execFileAsync("npx", ["tsx", "scripts/seed.ts"], {
-    cwd: repoRoot,
+async function runSeed(env: NodeJS.ProcessEnv, cwd: string) {
+  return execFileAsync(process.execPath, [tsxCli, seedScript], {
+    cwd,
     env,
     encoding: "utf8",
   });
 }
 
+describe("demo password is configured, not hard-coded", () => {
+  it("documents DEMO_PASSWORD and keeps the value out of the seed sources", () => {
+    const example = readFileSync(join(repoRoot, ".env.example"), "utf8");
+    const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+    const infraReadme = readFileSync(join(repoRoot, "infra/README.md"), "utf8");
+    const seedSource = readFileSync(join(repoRoot, "scripts/seed.ts"), "utf8");
+    const helperSource = readFileSync(join(repoRoot, "apps/api/src/auth/seed-password.ts"), "utf8");
+    const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
+
+    expect(example).toMatch(/^DEMO_PASSWORD=123456789012$/m);
+    expect(example).toContain("Leave it empty");
+    expect(readme).toContain("DEMO_PASSWORD");
+    expect(readme).toContain("unset");
+    expect(infraReadme).toContain("DEMO_PASSWORD");
+    expect(infraReadme).toContain("unset");
+    expect(seedSource).toContain("process.env.DEMO_PASSWORD");
+    expect(seedSource).not.toContain("123456789012");
+    expect(helperSource).not.toContain("123456789012");
+    expect(gitignore).toMatch(/^\.env$/m);
+  });
+});
+
 describe("npm run seed password modes", () => {
-  it("logs in every non-admin seeded user with DEMO_PASSWORD and does not require a password change", async () => {
+  it("logs in every seeded user with DEMO_PASSWORD from .env and stores an argon2id hash", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mops-seed-fixed-"));
     const databasePath = join(dir, "mops.sqlite");
-    const { stdout, stderr } = await runSeed({
+    writeFileSync(join(dir, ".env"), "DEMO_PASSWORD=123456789012\n");
+    const env: NodeJS.ProcessEnv = {
       ...baseEnv,
       DATABASE_PATH: databasePath,
       AUDIT_LOG_PATH: join(dir, "audit.log"),
-      DEMO_PASSWORD: "123456789012",
-    });
+    };
+    delete env.DEMO_PASSWORD;
+    const { stdout, stderr } = await runSeed(env, dir);
     expect(`${stdout}\n${stderr}`).toContain(DEMO_PASSWORD_WARNING);
-    expect(stdout).toContain("ada.admin@mops.example  123456789012");
-    expect(stdout).toContain("sam.lee@mops.example  123456789012");
+    const lines = seededPasswordLines(stdout);
+    expect(lines).toHaveLength(6);
+    for (const line of lines) expect(line.split(/\s+/)[1]).toBe("123456789012");
+    expectStoredAsArgon2(databasePath, "123456789012");
 
     process.env.DATABASE_PATH = databasePath;
     process.env.AUDIT_LOG_PATH = join(dir, "audit.log");
@@ -119,11 +172,27 @@ describe("npm run seed password modes", () => {
       AUDIT_LOG_PATH: join(dir, "audit.log"),
     };
     delete env.DEMO_PASSWORD;
-    const { stdout, stderr } = await runSeed(env);
+    const { stdout, stderr } = await runSeed(env, dir);
     expect(`${stdout}\n${stderr}`).not.toContain(DEMO_PASSWORD_WARNING);
-    const lines = stdout
-      .split("\n")
-      .filter((line) => line.includes("@mops.example"));
+    const lines = seededPasswordLines(stdout);
+    expect(lines).toHaveLength(6);
+    const passwords = new Set(lines.map((line) => line.split(/\s+/)[1]));
+    expect(passwords.size).toBe(6);
+    for (const password of passwords) expect(password).toMatch(/^Mops-[0-9a-f]{6}aA1!$/);
+  }, 60_000);
+
+  it("prints a random password per user when DEMO_PASSWORD is empty", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mops-seed-empty-"));
+    writeFileSync(join(dir, ".env"), "DEMO_PASSWORD=\n");
+    const env: NodeJS.ProcessEnv = {
+      ...baseEnv,
+      DATABASE_PATH: join(dir, "mops.sqlite"),
+      AUDIT_LOG_PATH: join(dir, "audit.log"),
+    };
+    delete env.DEMO_PASSWORD;
+    const { stdout, stderr } = await runSeed(env, dir);
+    expect(`${stdout}\n${stderr}`).not.toContain(DEMO_PASSWORD_WARNING);
+    const lines = seededPasswordLines(stdout);
     expect(lines).toHaveLength(6);
     const passwords = new Set(lines.map((line) => line.split(/\s+/)[1]));
     expect(passwords.size).toBe(6);
@@ -139,9 +208,22 @@ describe("npm run seed password modes", () => {
         DATABASE_PATH: databasePath,
         AUDIT_LOG_PATH: join(dir, "audit.log"),
         DEMO_PASSWORD: "short",
-      }),
+      }, dir),
     ).rejects.toThrow(/DEMO_PASSWORD must be 12 to 200 characters \(got 5\)/);
-    const { existsSync } = await import("node:fs");
+    expect(existsSync(databasePath)).toBe(false);
+  });
+
+  it("fails before writing the database when DEMO_PASSWORD is longer than 200 characters", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mops-seed-long-"));
+    const databasePath = join(dir, "mops.sqlite");
+    await expect(
+      runSeed({
+        ...baseEnv,
+        DATABASE_PATH: databasePath,
+        AUDIT_LOG_PATH: join(dir, "audit.log"),
+        DEMO_PASSWORD: "a".repeat(201),
+      }, dir),
+    ).rejects.toThrow(/DEMO_PASSWORD must be 12 to 200 characters \(got 201\)/);
     expect(existsSync(databasePath)).toBe(false);
   });
 });
