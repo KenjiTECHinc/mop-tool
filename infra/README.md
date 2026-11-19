@@ -27,4 +27,4 @@ npm run seed
 npm run dev
 ```
 
-`seed` creates `data/mops.sqlite`, prints each demo password once, and prints Ada's TOTP URI once.
+`seed` creates `data/mops.sqlite` and prints Ada's TOTP URI once. With `DEMO_PASSWORD` unset, it prints a random password for each demo user once. With `DEMO_PASSWORD` set, every seeded user shares that password and seed prints a warning that this is for the local demo only.

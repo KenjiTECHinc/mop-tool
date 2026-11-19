@@ -1,8 +1,9 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { config as loadDotenv } from "dotenv";
 import { resolve } from "node:path";
 import { authenticator } from "otplib";
 import { encryptSecret, hashPassword } from "../apps/api/src/auth/crypto.js";
+import { DEMO_PASSWORD_WARNING, randomDemoPassword, resolveSeedPassword } from "../apps/api/src/auth/seed-password.js";
 import { openDatabase, Store, type UserRecord } from "../apps/api/src/db/sqlite.js";
 
 loadDotenv({ path: resolve(process.cwd(), ".env") });
@@ -11,6 +12,8 @@ const totpKey = process.env.TOTP_KEY;
 if (!totpKey || totpKey.length < 16) {
   throw new Error("Set TOTP_KEY in .env before seeding.");
 }
+const seedPassword = resolveSeedPassword(process.env.DEMO_PASSWORD);
+if (seedPassword.kind === "fixed") console.warn(DEMO_PASSWORD_WARNING);
 const databasePath = process.env.DATABASE_PATH || "data/mops.sqlite";
 const db = openDatabase(databasePath);
 db.exec(`
@@ -43,7 +46,7 @@ const projects = [
 const ids = new Map<string, string>();
 console.log("Demo passwords (printed once):");
 for (const [email, name, jobTitle, tier, preferredLanguage, memberOf] of people) {
-  const password = `Mops-${randomBytes(3).toString("hex")}aA1!`;
+  const password = seedPassword.kind === "fixed" ? seedPassword.password : randomDemoPassword();
   const userId = randomUUID();
   const totpPlain = tier === "T1" ? authenticator.generateSecret() : "";
   const user: UserRecord = {
