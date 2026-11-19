@@ -1,0 +1,26 @@
+{
+  "name": "mops",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "infra"
+  ],
+  "scripts": {
+    "dev": "npm run build -w @mops/shared && concurrently -n api,web -c blue,magenta \"npm run dev -w @mops/api\" \"npm run dev -w web\"",
+    "build": "npm run build -w @mops/shared && npm run check:i18n && npm run build -w @mops/api && npm run build -w web",
+    "test": "npm run build -w @mops/shared && npm run test -w @mops/api",
+    "seed": "npm run build -w @mops/shared && tsx scripts/seed.ts",
+    "eval": "npm run build -w @mops/shared && tsx scripts/eval.ts",
+    "check:aws": "tsx scripts/check-aws.ts",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "cdk": "npm run cdk -w @mops/infra --"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-sts": "^3.940.0",
+    "@aws-sdk/credential-providers": "^3.940.0",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.6"
+  }
+}

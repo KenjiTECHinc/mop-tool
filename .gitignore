@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+apps/web/.env
+cdk.out/
+.cdk.staging/
+*.log
+coverage/
+data/

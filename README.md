@@ -1,1 +1,82 @@
-﻿# mops-tool
+﻿# Mops
+
+An AI-assisted ticket desk. The React app, the API, SQLite, and login run on your machine. Amazon Bedrock and Guardrails stay in AWS.
+
+Authorization is enforced in the API. The model never decides what a user may do, write tools only create a pending action, and ticket text is treated as untrusted data. Admin users do not receive ticket content, including in the audit log.
+
+## Trust ladder
+
+- Level 1, this build: the assistant can read and propose. Every write waits for confirmation.
+- Level 2, later: low-risk comments and status changes could run with undo.
+- Level 3, later: proactive suggestions and scheduled digests.
+- Deletes and bulk creates always wait for confirmation.
+
+## Prerequisites
+
+- Node.js 22 or newer
+- An AWS account that can call Bedrock in `ap-southeast-2`
+- A Bedrock API key and the Mantle base URL
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env
+```
+
+Fill `SESSION_SECRET`, `TOTP_KEY`, `OPENAI_API_KEY`, and `BEDROCK_MODEL_ID`. Optional guardrail steps are in [infra/README.md](infra/README.md).
+
+```bash
+npm run seed
+npm run dev
+```
+
+The UI is http://localhost:5173 and the API is http://127.0.0.1:3001.
+
+The session cookie is HttpOnly and SameSite=Strict. The browser sends `X-Mops-Request: 1` on writes. The language choice before login may stay in localStorage. Passwords and the session id do not.
+
+`data/mops.sqlite` is gitignored. On Windows, keep that disk encrypted with BitLocker. The audit table rejects updates and deletes, and the same events are appended to `data/audit.log` without ticket text.
+
+## Demo users
+
+`npm run seed` prints a password for each person once, plus Ada's authenticator URI.
+
+- ada.admin@mops.example, Admin/IT, T1, English, Sandbox, TOTP required
+- chris.chen@mops.example, CTO, T2, English, Apollo, Helios, and Nexus
+- maya.chen@mops.example, Product Manager, T2, English, Apollo and Helios
+- sam.lee@mops.example, Developer, T3, Traditional Chinese, Apollo
+- jordan.wu@mops.example, Developer, T3, English, Apollo and Nexus
+- riley.park@mops.example, Developer, T3, English, Helios
+
+APOLLO-5 has an English comment that tries to instruct the assistant. APOLLO-8 has the same kind of comment in Chinese.
+
+## Scripts
+
+- `npm test` checks permissions, redaction, lockout, session expiry, T1 one-time codes, and the audit triggers.
+- `npm run check:i18n` fails when the English and Traditional Chinese files diverge.
+- `npm run eval` sends the bilingual prompt set through the real orchestrator and spends Bedrock credits.
+- `npm run check:aws` checks your caller identity and lists Mantle models. It does not create a response.
+- `npm audit` before you present the project.
+
+## Architecture
+
+```text
+Browser (Vite, :5173) -- cookie --> API (Fastify, 127.0.0.1:3001)
+  argon2id, sessions, TOTP for T1
+  authorize() and the service layer
+  SQLite file and append-only audit log
+  OpenAI SDK -> Bedrock Mantle Responses API (store: false)
+  ApplyGuardrail when GUARDRAIL_ID is set
+```
+
+Only the prompt, role-filtered tool definitions, redacted ticket excerpts, and the language preference are sent to Bedrock. Passwords, sessions, and the database stay local.
+
+## Assumptions
+
+- A developer may comment on and change the status of any ticket in a member project.
+- A product manager or CTO may edit and delete tickets only in member projects.
+- Comments cannot be edited or deleted.
+- A job title containing "CTO" selects the short cross-project briefing.
+- Chinese means Traditional Chinese.
+- The visual layout follows the design guidelines: a top header, not a left rail.
+- Authentication, data access, and secrets sit behind local implementations so they can later move to Cognito, DynamoDB, and Secrets Manager without rewriting ticket rules.
