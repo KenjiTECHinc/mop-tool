@@ -1,6 +1,6 @@
 [English](README.md) | 繁體中文
 
-# MOPs - Management Operations：AI 驅動的工單台
+# 🧹🪣 MOPs - Management Operations：AI 驅動的工單台
 
 人工智慧輔助的工單台。React 應用程式、API、SQLite 與登入都在你的電腦上執行。Amazon Bedrock 與 Guardrails 留在 AWS。
 
