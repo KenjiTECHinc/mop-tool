@@ -72,6 +72,7 @@ APOLLO-5 has an English comment that tries to instruct the assistant. APOLLO-8 h
 
 - `npm test` checks permissions, redaction, lockout, session expiry, T1 one-time codes, and the audit triggers.
 - `npm run check:i18n` fails when the English and Traditional Chinese files diverge.
+- `python3 scripts/render-db-schema.py` redraws `docs/db-schema.png` and `docs/db-schema.zh-TW.png` from these Mermaid blocks via `npx -y @mermaid-js/mermaid-cli@11.12.0` (`-t dark -s 2`). It needs Chrome and Noto Sans CJK TC. `mmdc` is not an npm dependency.
 - `npm run eval` sends the bilingual prompt set through the real orchestrator and spends Bedrock credits.
 - `npm run check:aws` checks `AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION`, and `BEDROCK_MODEL_ID` with one short Converse call. It does not call STS. Bedrock API keys cannot call `GetCallerIdentity`.
 - `npm audit` before you present the project.
@@ -203,6 +204,8 @@ erDiagram
     TEXT resource_id
   }
 ```
+
+Diagram not rendering (e.g. on the GitHub mobile app)? [View the database schema as an image](docs/db-schema.png)
 
 `project_members.project_id` and `project_members.user_id` are a composite primary key. Both are logical foreign keys, to `projects` and `users`.
 

@@ -72,6 +72,7 @@ APOLLO-5 有一則英文留言，試圖指示助理。APOLLO-8 有同樣性質�
 
 - `npm test` 檢查權限、遮罩、鎖定、工作階段到期、T1 一次性驗證碼，以及稽核觸發器。
 - `npm run check:i18n` 會在英文與繁體中文檔案不一致時失敗。
+- `python3 scripts/render-db-schema.py` 用 `npx -y @mermaid-js/mermaid-cli@11.12.0`（`-t dark -s 2`）依這些 Mermaid 區塊重畫 `docs/db-schema.png` 與 `docs/db-schema.zh-TW.png`。需要 Chrome 與 Noto Sans CJK TC。`mmdc` 不是 npm 依賴。
 - `npm run eval` 把雙語提示集送進真正的協調器，並消耗 Bedrock 額度。
 - `npm run check:aws` 用一次短暫的 Converse 呼叫檢查 `AWS_BEARER_TOKEN_BEDROCK`、`AWS_REGION` 與 `BEDROCK_MODEL_ID`。它不呼叫 STS。Bedrock API 金鑰不能呼叫 `GetCallerIdentity`。
 - 展示專案前先跑 `npm audit`。
@@ -203,6 +204,8 @@ erDiagram
     TEXT resource_id
   }
 ```
+
+圖表無法顯示（例如在 GitHub 手機 App）？[點此查看資料庫結構圖片](docs/db-schema.zh-TW.png)
 
 `project_members.project_id` 與 `project_members.user_id` 是複合主鍵。兩者都是邏輯外鍵，分別指向 `projects` 與 `users`。
 
