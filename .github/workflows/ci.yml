@@ -15,9 +15,8 @@ jobs:
       # password delete DEMO_PASSWORD themselves.
       SESSION_SECRET: test-session-secret-value
       TOTP_KEY: test-totp-key-value-ok
-      OPENAI_BASE_URL: https://bedrock-mantle.ap-southeast-2.api.aws/v1
-      OPENAI_API_KEY: test-key
-      BEDROCK_MODEL_ID: openai.gpt-oss-120b
+      AWS_BEARER_TOKEN_BEDROCK: test-bedrock-token
+      BEDROCK_MODEL_ID: test-model
       DEMO_PASSWORD: "123456789012"
       AWS_PROFILE: ""
       APP_ROLE_ARN: ""
