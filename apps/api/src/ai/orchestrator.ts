@@ -1,5 +1,13 @@
-import OpenAI from "openai";
-import type { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+import { randomUUID } from "node:crypto";
+import {
+  ConverseStreamCommand,
+  type BedrockRuntimeClient,
+  type ContentBlock,
+  type ConverseStreamOutput,
+  type Message,
+  type Tool,
+  type ToolInputSchema,
+} from "@aws-sdk/client-bedrock-runtime";
 import { statusSchema, ticketTypeSchema, prioritySchema, type Language, type Status } from "@mops/shared";
 import { promptFingerprint } from "../audit.js";
 import type { AppConfig } from "../config.js";
@@ -210,43 +218,132 @@ interface Call {
   arguments: string;
 }
 
+function jsonDocument(value: Record<string, unknown>): ToolInputSchema.JsonMember["json"] {
+  return value as ToolInputSchema.JsonMember["json"];
+}
+
+function toolArguments(raw: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    // Incomplete streamed JSON is treated as an empty argument object.
+  }
+  return {};
+}
+
+function toolDefinitions(allowed: Set<string>): Tool[] {
+  return [...allowed].map((name) => ({
+    toolSpec: {
+      name,
+      description: TOOL_SPECS[name]?.description ?? name,
+      inputSchema: {
+        json: jsonDocument((TOOL_SPECS[name]?.parameters ?? { type: "object", properties: {} }) as Record<string, unknown>),
+      },
+    },
+  }));
+}
+
+function conversationMessages(turns: Turn[], userContent: string): Message[] {
+  const messages: Message[] = [];
+  for (const turn of [...turns, { role: "user" as const, content: userContent }]) {
+    const block: ContentBlock = { text: turn.content };
+    const last = messages[messages.length - 1];
+    if (last?.role === turn.role) {
+      last.content = [...(last.content ?? []), block];
+      continue;
+    }
+    messages.push({ role: turn.role, content: [block] });
+  }
+  return messages;
+}
+
+function assistantBlocks(text: string, calls: Call[]): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  if (text) blocks.push({ text });
+  for (const call of calls) {
+    blocks.push({
+      toolUse: {
+        toolUseId: call.callId,
+        name: call.name,
+        input: jsonDocument(toolArguments(call.arguments)),
+      },
+    });
+  }
+  return blocks;
+}
+
+function streamFault(event: ConverseStreamOutput): string | null {
+  if ("internalServerException" in event && event.internalServerException) return "internal";
+  if ("modelStreamErrorException" in event && event.modelStreamErrorException) return "model";
+  if ("validationException" in event && event.validationException) return "validation";
+  if ("throttlingException" in event && event.throttlingException) return "throttling";
+  if ("serviceUnavailableException" in event && event.serviceUnavailableException) return "unavailable";
+  return null;
+}
+
 async function modelTurn(
-  client: OpenAI,
+  client: BedrockRuntimeClient,
   config: AppConfig,
   language: Language,
-  input: unknown[],
-  tools: { type: "function"; name: string; description: string; parameters: Record<string, unknown>; strict: false }[],
+  messages: Message[],
+  tools: Tool[],
   emit: (event: UiEvent) => void,
 ): Promise<{ text: string; calls: Call[] }> {
-  const stream = await client.responses.create({
-    model: config.BEDROCK_MODEL_ID,
-    store: false,
-    max_output_tokens: config.AI_MAX_TOKENS,
-    instructions: instructions(language),
-    input: input as never,
-    tools,
-    stream: true,
-  });
+  const response = await client.send(
+    new ConverseStreamCommand({
+      modelId: config.BEDROCK_MODEL_ID,
+      system: [{ text: instructions(language) }],
+      // Copy so a later tool round cannot change a request the client already accepted.
+      messages: messages.map((message) => ({ role: message.role, content: [...(message.content ?? [])] })),
+      ...(tools.length > 0 ? { toolConfig: { tools } } : {}),
+      inferenceConfig: { maxTokens: config.AI_MAX_TOKENS },
+    }),
+  );
 
   let text = "";
   const calls: Call[] = [];
-  for await (const event of stream as AsyncIterable<{
-    type: string;
-    delta?: string;
-    item?: { type?: string; call_id?: string; name?: string; arguments?: string };
-  }>) {
-    if (event.type === "response.output_text.delta" && event.delta) {
-      text += event.delta;
-      emit({ type: "text", delta: event.delta });
-    }
-    if (event.type === "response.output_item.done" && event.item?.type === "function_call") {
-      calls.push({
-        callId: event.item.call_id ?? "",
-        name: event.item.name ?? "",
-        arguments: event.item.arguments ?? "{}",
+  const pending = new Map<number, { callId: string; name: string; arguments: string }>();
+  const finish = (current: { callId: string; name: string; arguments: string }) => {
+    calls.push({
+      callId: current.callId || `tool-${randomUUID()}`,
+      name: current.name,
+      arguments: current.arguments || "{}",
+    });
+  };
+  for await (const event of response.stream ?? []) {
+    const fault = streamFault(event);
+    if (fault) throw new Error(`Bedrock stream ${fault}`);
+    if ("contentBlockStart" in event && event.contentBlockStart?.start && "toolUse" in event.contentBlockStart.start && event.contentBlockStart.start.toolUse) {
+      const toolUse = event.contentBlockStart.start.toolUse;
+      pending.set(event.contentBlockStart.contentBlockIndex ?? 0, {
+        callId: toolUse.toolUseId ?? "",
+        name: toolUse.name ?? "",
+        arguments: "",
       });
     }
+    if ("contentBlockDelta" in event && event.contentBlockDelta?.delta) {
+      const delta = event.contentBlockDelta.delta;
+      if ("text" in delta && delta.text) {
+        text += delta.text;
+        emit({ type: "text", delta: delta.text });
+      }
+      if ("toolUse" in delta && delta.toolUse?.input) {
+        const index = event.contentBlockDelta.contentBlockIndex ?? 0;
+        const current = pending.get(index) ?? { callId: "", name: "", arguments: "" };
+        current.arguments += delta.toolUse.input;
+        pending.set(index, current);
+      }
+    }
+    if ("contentBlockStop" in event && event.contentBlockStop) {
+      const index = event.contentBlockStop.contentBlockIndex ?? 0;
+      const current = pending.get(index);
+      if (!current) continue;
+      pending.delete(index);
+      finish(current);
+    }
   }
+  for (const current of pending.values()) finish(current);
   return { text, calls };
 }
 
@@ -281,34 +378,27 @@ export async function runChat(options: {
 
   const key = `${ctx.actor.userId}:${options.conversationId}`;
   const turns = history.get(key) ?? [];
-  const input: unknown[] = [
-    ...turns.map((turn) => ({ role: turn.role, content: turn.content })),
-    { role: "user", content: userContent },
-  ];
-  const tools = [...allowed].map((name) => ({
-    type: "function" as const,
-    name,
-    description: TOOL_SPECS[name]?.description ?? name,
-    parameters: TOOL_SPECS[name]?.parameters ?? { type: "object", properties: {} },
-    strict: false as const,
-  }));
-
-  const client = new OpenAI({
-    apiKey: options.config.OPENAI_API_KEY,
-    baseURL: options.config.OPENAI_BASE_URL,
-  });
+  const messages = conversationMessages(turns, userContent);
+  const tools = toolDefinitions(allowed);
 
   let assistant = "";
   for (let round = 0; round < 5; round += 1) {
-    const turn = await modelTurn(client, options.config, language, input, tools, emit);
+    const turn = await modelTurn(options.bedrock, options.config, language, messages, tools, emit);
     assistant += turn.text;
     if (turn.calls.length === 0) break;
+    const toolResults: ContentBlock[] = [];
     for (const call of turn.calls) {
       emit({ type: "tool", name: call.name });
       const output = await runTool(ctx, options.bedrock, options.config, allowed, call, emit);
-      input.push({ type: "function_call", call_id: call.callId, name: call.name, arguments: call.arguments });
-      input.push({ type: "function_call_output", call_id: call.callId, output });
+      toolResults.push({
+        toolResult: {
+          toolUseId: call.callId,
+          content: [{ text: output }],
+        },
+      });
     }
+    messages.push({ role: "assistant", content: assistantBlocks(turn.text, turn.calls) });
+    messages.push({ role: "user", content: toolResults });
   }
 
   if (assistant && (await screenText(options.bedrock, options.config, assistant, "OUTPUT"))) {

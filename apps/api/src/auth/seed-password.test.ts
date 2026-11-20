@@ -73,9 +73,8 @@ const baseEnv: NodeJS.ProcessEnv = {
   ...process.env,
   TOTP_KEY: "test-totp-key-value-ok",
   SESSION_SECRET: "test-session-secret-value",
-  OPENAI_BASE_URL: "https://bedrock-mantle.ap-southeast-2.api.aws/v1",
-  OPENAI_API_KEY: "test-key",
-  BEDROCK_MODEL_ID: "openai.gpt-oss-120b",
+  AWS_BEARER_TOKEN_BEDROCK: "test-bedrock-token",
+  BEDROCK_MODEL_ID: "test-model",
   AWS_PROFILE: "",
   APP_ROLE_ARN: "",
 };
@@ -132,8 +131,7 @@ describe("npm run seed password modes", () => {
     process.env.AUDIT_LOG_PATH = join(dir, "audit.log");
     process.env.SESSION_SECRET = baseEnv.SESSION_SECRET;
     process.env.TOTP_KEY = baseEnv.TOTP_KEY;
-    process.env.OPENAI_BASE_URL = baseEnv.OPENAI_BASE_URL;
-    process.env.OPENAI_API_KEY = baseEnv.OPENAI_API_KEY;
+    process.env.AWS_BEARER_TOKEN_BEDROCK = baseEnv.AWS_BEARER_TOKEN_BEDROCK;
     process.env.BEDROCK_MODEL_ID = baseEnv.BEDROCK_MODEL_ID;
     process.env.AWS_PROFILE = "";
     process.env.APP_ROLE_ARN = "";

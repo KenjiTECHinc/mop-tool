@@ -9,9 +9,8 @@ process.env.DATABASE_PATH = join(dir, "test.sqlite");
 process.env.AUDIT_LOG_PATH = join(dir, "audit.log");
 process.env.SESSION_SECRET = "test-session-secret-value";
 process.env.TOTP_KEY = "test-totp-key-value-ok";
-process.env.OPENAI_BASE_URL ??= "https://bedrock-mantle.ap-southeast-2.api.aws/v1";
-process.env.OPENAI_API_KEY ??= "test-key";
-process.env.BEDROCK_MODEL_ID ??= "openai.gpt-oss-120b";
+process.env.AWS_BEARER_TOKEN_BEDROCK ??= "test-bedrock-token";
+process.env.BEDROCK_MODEL_ID ??= "test-model";
 
 const { hashPassword, encryptSecret } = await import("./crypto.js");
 const { openDatabase, Store } = await import("../db/sqlite.js");

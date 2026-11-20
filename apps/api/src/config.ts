@@ -30,8 +30,7 @@ const schema = z.object({
   TOTP_KEY: z.string().min(16),
   DATABASE_PATH: z.string().min(1).default("data/mops.sqlite"),
   AUDIT_LOG_PATH: z.string().min(1).default("data/audit.log"),
-  OPENAI_BASE_URL: z.string().url(),
-  OPENAI_API_KEY: z.string().min(1),
+  AWS_BEARER_TOKEN_BEDROCK: z.string().trim().min(1),
   BEDROCK_MODEL_ID: z.string().min(1),
   GUARDRAIL_ID: z.string().optional().default(""),
   GUARDRAIL_VERSION: z.string().optional().default(""),
@@ -48,9 +47,6 @@ export function loadConfig(): AppConfig {
   if (!parsed.success) {
     const missing = parsed.error.issues.map((issue) => issue.path.join(".") || issue.message);
     throw new Error(`Missing or invalid environment. Fill these in .env before starting the API: ${missing.join(", ")}`);
-  }
-  if (parsed.data.OPENAI_BASE_URL.includes("api.openai.com")) {
-    throw new Error("OPENAI_BASE_URL must be the Bedrock Mantle host, not api.openai.com.");
   }
   return {
     ...parsed.data,
