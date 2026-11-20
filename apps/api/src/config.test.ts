@@ -87,6 +87,11 @@ describe("loadConfig Bedrock API key", () => {
     expect(config.AWS_PROFILE).toBe("mops-dev");
   });
 
+  it("keeps the local bind address on loopback unless HOST is set", async () => {
+    expect((await load()).HOST).toBe("127.0.0.1");
+    expect((await load({ HOST: "0.0.0.0" })).HOST).toBe("0.0.0.0");
+  });
+
   it("does not put the API key in the validation error", async () => {
     await expect(load({ BEDROCK_MODEL_ID: "" })).rejects.toThrow(/BEDROCK_MODEL_ID/);
     try {

@@ -28,6 +28,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     PORT: 3001,
     CORS_ORIGIN: "http://localhost:5173",
     ...overrides,
+    HOST: overrides.HOST ?? "127.0.0.1",
   };
 }
 

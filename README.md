@@ -68,6 +68,36 @@ The session cookie is HttpOnly and SameSite=Strict. The browser sends `X-Mops-Re
 
 APOLLO-5 has an English comment that tries to instruct the assistant. APOLLO-8 has the same kind of comment in Chinese.
 
+## Run with Docker
+
+Docker Compose starts the UI and the API together. You still fill in `.env`. That file is not copied into either image.
+
+```bash
+cp .env.example .env
+```
+
+Fill `SESSION_SECRET`, `TOTP_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, and `BEDROCK_MODEL_ID`. `DEMO_PASSWORD` is optional (12 to 200 characters).
+
+```bash
+docker compose up --build
+```
+
+Later starts can use `docker compose up`. The UI is http://localhost:5173 and the API is http://localhost:3001.
+
+The page calls `/api` on the same origin. The web container proxies that path to the API on the Compose network. The browser stays on http://localhost:5173, so the HttpOnly SameSite=Strict session cookie and the `X-Mops-Request: 1` header still apply. `npm run dev` is unchanged: the dev server still uses `VITE_API_URL` from `.env` (http://localhost:3001) and the API still binds `127.0.0.1`. Inside Compose the API listens on `0.0.0.0` so the web container and the published port can reach it.
+
+The API reads `.env` through Compose `env_file` when the container starts. Containers run as a non-root user.
+
+The first start seeds demo data when the database file is missing. Passwords are printed once in the API logs:
+
+```bash
+docker compose logs api
+```
+
+With `DEMO_PASSWORD` set, every demo user shares that password and the log includes the local-demo warning. Without it, each person gets a random password in that log. Ada (T1) still needs the code `000000`. T2 and T3 users sign in with the password only. The accounts are listed under Demo users above.
+
+SQLite and the audit log are stored on the named volume `mops-data` (`/data/mops.sqlite` and `/data/audit.log` in the API container). `docker compose down` keeps the volume. The next `docker compose up` sees the database and skips seeding. `docker compose down -v` deletes the volume. The next start seeds again.
+
 ## Scripts
 
 - `npm test` checks permissions, redaction, lockout, session expiry, T1 one-time codes, and the audit triggers.

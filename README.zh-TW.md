@@ -68,6 +68,36 @@ npm run dev
 
 APOLLO-5 有一則英文留言，試圖指示助理。APOLLO-8 有同樣性質的中文留言。
 
+## 用 Docker 執行
+
+Docker Compose 會一起啟動介面與 API。你仍然要填 `.env`。那個檔案不會被複製進任何一個映像。
+
+```bash
+cp .env.example .env
+```
+
+填入 `SESSION_SECRET`、`TOTP_KEY`、`AWS_BEARER_TOKEN_BEDROCK` 與 `BEDROCK_MODEL_ID`。`DEMO_PASSWORD` 可選（12 到 200 個字元）。
+
+```bash
+docker compose up --build
+```
+
+之後可以只用 `docker compose up`。介面是 http://localhost:5173，API 是 http://localhost:3001。
+
+頁面呼叫同一個來源的 `/api`。web 容器把這個路徑代理到 Compose 網路上的 API。瀏覽器留在 http://localhost:5173，所以 HttpOnly、SameSite=Strict 的工作階段 Cookie，以及 `X-Mops-Request: 1` 標頭仍然有效。`npm run dev` 不變：開發伺服器仍使用 `.env` 的 `VITE_API_URL`（http://localhost:3001），API 仍綁定 `127.0.0.1`。在 Compose 裡，API 監聽 `0.0.0.0`，web 容器與對外的連接埠才連得上。
+
+API 在容器啟動時透過 Compose 的 `env_file` 讀取 `.env`。容器以非 root 使用者執行。
+
+第一次啟動時，若資料庫檔案不存在，會寫入展示資料。密碼只在 API 紀錄裡印出一次：
+
+```bash
+docker compose logs api
+```
+
+有設定 `DEMO_PASSWORD` 時，每位展示用使用者共用該密碼，紀錄裡也會有只供本機展示的警告。沒有設定時，每個人的隨機密碼都在那份紀錄裡。Ada（T1）仍需要驗證碼 `000000`。T2 與 T3 只需要密碼。帳號列在上方的「展示用使用者」。
+
+SQLite 與稽核紀錄放在具名磁碟區 `mops-data`（API 容器裡的 `/data/mops.sqlite` 與 `/data/audit.log`）。`docker compose down` 會保留磁碟區。下一次 `docker compose up` 看到資料庫就略過種子資料。`docker compose down -v` 會刪除磁碟區。下一次啟動會再寫入種子資料。
+
 ## 指令
 
 - `npm test` 檢查權限、遮罩、鎖定、工作階段到期、T1 一次性驗證碼，以及稽核觸發器。
