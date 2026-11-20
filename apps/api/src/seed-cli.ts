@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { config as loadDotenv } from "dotenv";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { hashPassword } from "./auth/crypto.js";
+import { authenticator } from "otplib";
+import { encryptSecret, hashPassword } from "./auth/crypto.js";
 import { DEMO_PASSWORD_WARNING, randomDemoPassword, resolveSeedPassword } from "./auth/seed-password.js";
 import { openDatabase, Store, type UserRecord } from "./db/sqlite.js";
 
@@ -11,6 +12,10 @@ loadDotenv({ path: resolve(process.cwd(), ".env") });
 
 const seedPassword = resolveSeedPassword(process.env.DEMO_PASSWORD);
 if (seedPassword.kind === "fixed") console.warn(DEMO_PASSWORD_WARNING);
+const totpKey = process.env.TOTP_KEY ?? "";
+if (totpKey.length < 16) {
+  throw new Error("TOTP_KEY must be at least 16 characters before seeding. Ada's authenticator secret is encrypted with it.");
+}
 const databasePath = process.env.DATABASE_PATH || "data/mops.sqlite";
 const db = openDatabase(databasePath);
 db.exec(`
@@ -41,10 +46,13 @@ const projects = [
 ] as const;
 
 const ids = new Map<string, string>();
+let adaTotpSecret = "";
 console.log("Demo passwords (printed once):");
 for (const [email, name, jobTitle, tier, preferredLanguage, memberOf] of people) {
   const password = seedPassword.kind === "fixed" ? seedPassword.password : randomDemoPassword();
   const userId = randomUUID();
+  const plainTotp = tier === "T1" ? authenticator.generateSecret() : undefined;
+  if (plainTotp) adaTotpSecret = plainTotp;
   const user: UserRecord = {
     userId,
     email,
@@ -54,6 +62,7 @@ for (const [email, name, jobTitle, tier, preferredLanguage, memberOf] of people)
     status: "active",
     preferredLanguage,
     passwordHash: await hashPassword(password),
+    totpSecret: plainTotp ? encryptSecret(plainTotp, totpKey) : undefined,
     failedLogins: 0,
     mustChangePassword: false,
   };
@@ -62,6 +71,12 @@ for (const [email, name, jobTitle, tier, preferredLanguage, memberOf] of people)
   console.log(`${email}  ${password}`);
   void memberOf;
 }
+if (!adaTotpSecret) throw new Error("Ada's authenticator secret was not generated.");
+const adaLabel = `${encodeURIComponent("MOPs")}:${encodeURIComponent("ada.admin@mops.example")}`;
+const adaOtpauth = `otpauth://totp/${adaLabel}?secret=${encodeURIComponent(adaTotpSecret)}&issuer=${encodeURIComponent("MOPs")}`;
+console.log("Ada authenticator secret (printed once):");
+console.log(adaTotpSecret);
+console.log(adaOtpauth);
 
 for (const [projectId, name, key, isSandbox] of projects) {
   await store.putProject({ projectId, name, key, isSandbox, nextNumber: 0 });
@@ -143,7 +158,7 @@ for (const [ticketId, body, author] of comments) {
     createdVia: "ui",
   });
 }
-console.log("Seeded local SQLite. Ada is T1. A real TOTP code is required unless DEMO_TOTP_BYPASS=true, which accepts 000000 and makes the API log a startup warning. The flag is off by default.");
+console.log("Seeded local SQLite. Ada is T1. Add the authenticator secret printed above to an authenticator app. It is printed only on this seed. DEMO_TOTP_BYPASS=true accepts 000000 and makes the API log a startup warning. The flag is off by default.");
 }
 
 const entry = process.argv[1];

@@ -57,9 +57,9 @@ The session cookie is HttpOnly and SameSite=Strict. The browser sends `X-Mops-Re
 
 ## Demo users
 
-`npm run seed` gives every demo user a password. Set `DEMO_PASSWORD` in `.env` (12 to 200 characters; see `.env.example`) to share one password. Seed then prints a warning that the shared password is for the local demo only. Leave `DEMO_PASSWORD` unset and seed prints a random password for each person once. Ada (T1) needs a real authenticator code. The demo code `000000` works only when `DEMO_TOTP_BYPASS=true`. That flag is off by default, including in Docker. When it is on, the API prints a warning at startup. Leave it unset for any real deployment.
+`npm run seed` gives every demo user a password. Set `DEMO_PASSWORD` in `.env` (12 to 200 characters; see `.env.example`) to share one password. Seed then prints a warning that the shared password is for the local demo only. Leave `DEMO_PASSWORD` unset and seed prints a random password for each person once. Ada (T1) gets an authenticator secret. Seed prints the base32 secret and an `otpauth://` URL once. Add that secret to an authenticator app and use its current code. The secret is not written to the audit log, and it is not printed again. If you lose it, delete the database and seed again. The demo code `000000` works only when `DEMO_TOTP_BYPASS=true`. That flag is off by default, including in Docker. When it is on, the API prints a warning at startup. Leave it unset for any real deployment.
 
-- ada.admin@mops.example, Admin/IT, T1, English, Sandbox. With `DEMO_TOTP_BYPASS=true`, the second step is `000000`. Otherwise use her real TOTP code.
+- ada.admin@mops.example, Admin/IT, T1, English, Sandbox. Second step is the code from the authenticator secret printed by seed. With `DEMO_TOTP_BYPASS=true`, the second step is `000000`.
 - chris.chen@mops.example, CTO, T2, English, Apollo, Helios, and Nexus
 - maya.chen@mops.example, Product Manager, T2, English, Apollo and Helios
 - sam.lee@mops.example, Developer, T3, Traditional Chinese, Apollo
@@ -88,15 +88,15 @@ The page calls `/api` on the same origin. The web container proxies that path to
 
 The API reads `.env` through Compose `env_file` when the container starts. Containers run as a non-root user.
 
-The first start seeds demo data when the database file is missing. Passwords are printed once in the API logs:
+The first start seeds demo data when the database file is missing. Passwords and Ada's authenticator secret are printed once in the API logs:
 
 ```bash
 docker compose logs api
 ```
 
-With `DEMO_PASSWORD` set, every demo user shares that password and the log includes the local-demo warning. Without it, each person gets a random password in that log. T2 and T3 users sign in with the password only. Ada (T1) needs a real TOTP code unless you set `DEMO_TOTP_BYPASS=true` in `.env` before starting the API. Compose does not set that flag. When it is true, startup logs a warning and `000000` is accepted. The accounts are listed under Demo users above.
+With `DEMO_PASSWORD` set, every demo user shares that password and the log includes the local-demo warning. Without it, each person gets a random password in that log. T2 and T3 users sign in with the password only. Ada (T1): copy the base32 secret from that first log (the line under `Ada authenticator secret`) into an authenticator app, or open the `otpauth://` URL. `DEMO_TOTP_BYPASS=true` in `.env` is a demo-only shortcut that accepts `000000` and logs a startup warning. Compose does not set that flag. The accounts are listed under Demo users above.
 
-SQLite and the audit log are stored on the named volume `mops-data` (`/data/mops.sqlite` and `/data/audit.log` in the API container). `docker compose down` keeps the volume. The next `docker compose up` sees the database and skips seeding. `docker compose down -v` deletes the volume. The next start seeds again.
+SQLite and the audit log are stored on the named volume `mops-data` (`/data/mops.sqlite` and `/data/audit.log` in the API container). The authenticator secret is not in the audit log. `docker compose down` keeps the volume. The next `docker compose up` sees the database and skips seeding, so the secret is not printed again. `docker compose down -v` deletes the volume. The next start seeds again and prints a new secret.
 
 ## Scripts
 
