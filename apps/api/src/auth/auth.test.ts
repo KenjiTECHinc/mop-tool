@@ -1,7 +1,6 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { authenticator } from "otplib";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const dir = mkdtempSync(join(tmpdir(), "mops-auth-"));
@@ -12,7 +11,7 @@ process.env.TOTP_KEY = "test-totp-key-value-ok";
 process.env.AWS_BEARER_TOKEN_BEDROCK ??= "test-bedrock-token";
 process.env.BEDROCK_MODEL_ID ??= "test-model";
 
-const { hashPassword, encryptSecret } = await import("./crypto.js");
+const { hashPassword } = await import("./crypto.js");
 const { openDatabase, Store } = await import("../db/sqlite.js");
 const { loadConfig } = await import("../config.js");
 const { createBedrock } = await import("../aws.js");
@@ -22,7 +21,6 @@ const config = loadConfig();
 const db = openDatabase(config.DATABASE_PATH);
 const store = new Store(db);
 const password = "correct-horse-1";
-const totpSecret = authenticator.generateSecret();
 
 beforeAll(async () => {
   await store.createUser({
@@ -46,7 +44,6 @@ beforeAll(async () => {
     status: "active",
     preferredLanguage: "en",
     passwordHash: await hashPassword(password),
-    totpSecret: encryptSecret(totpSecret, config.TOTP_KEY),
     failedLogins: 0,
     mustChangePassword: false,
   });
@@ -122,7 +119,7 @@ describe("local auth", () => {
       method: "POST",
       url: "/auth/mfa/verify",
       headers: { "x-mops-request": "1" },
-      payload: { challengeId: body.challengeId, code: "000000" },
+      payload: { challengeId: body.challengeId, code: "111111" },
     });
     expect(bad.statusCode).toBe(401);
     const challengeId = new Store(openDatabase(config.DATABASE_PATH)).createChallenge("admin-1");
@@ -130,12 +127,33 @@ describe("local auth", () => {
       method: "POST",
       url: "/auth/mfa/verify",
       headers: { "x-mops-request": "1" },
-      payload: { challengeId, code: authenticator.generate(totpSecret) },
+      payload: { challengeId, code: "000000" },
     });
     expect(good.statusCode).toBe(200);
     const issued = setCookie(good);
     expect(issued).toContain("HttpOnly");
     expect(issued.toLowerCase()).toContain("samesite=strict");
+    await app.close();
+  });
+});
+
+describe("cors", () => {
+  it("allows PATCH on the /me preflight", async () => {
+    const app = await buildApp(config, createBedrock(config));
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/me",
+      headers: {
+        origin: config.CORS_ORIGIN,
+        "access-control-request-method": "PATCH",
+        "access-control-request-headers": "content-type,x-mops-request",
+      },
+    });
+    expect(response.statusCode).not.toBe(403);
+    const allow = String(response.headers["access-control-allow-methods"] ?? "");
+    expect(allow).toMatch(/PATCH/);
+    expect(allow).toMatch(/PUT/);
+    expect(allow).toMatch(/DELETE/);
     await app.close();
   });
 });

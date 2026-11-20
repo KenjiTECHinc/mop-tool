@@ -9,5 +9,5 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
-  "include": ["seed.ts", "check-aws.ts"]
+  "include": ["seed.ts", "check-aws.ts", "test-bedrock.ts"]
 }

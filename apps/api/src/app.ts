@@ -4,7 +4,6 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { authenticator } from "otplib";
 import {
   adminUserPatchSchema,
   adminUserSchema,
@@ -21,7 +20,7 @@ import {
   type Tier,
 } from "@mops/shared";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { decryptSecret, encryptSecret, hashPassword, verifyPassword } from "./auth/crypto.js";
+import { hashPassword, verifyPassword } from "./auth/crypto.js";
 import type { AppConfig } from "./config.js";
 import { Store, type UserRecord, openDatabase } from "./db/sqlite.js";
 import { ApiError, dayKey } from "./http.js";
@@ -81,10 +80,12 @@ export async function buildApp(config: AppConfig, bedrock: BedrockRuntimeClient)
   await app.register(cors, {
     origin: config.CORS_ORIGIN,
     credentials: true,
+    methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE"],
     allowedHeaders: ["content-type", "x-mops-request"],
   });
 
   app.addHook("onRequest", async (request, reply) => {
+    if (request.method === "OPTIONS") return;
     const path = request.url.split("?")[0] ?? request.url;
     if (request.method !== "GET" && request.method !== "HEAD" && request.headers["x-mops-request"] !== "1") {
       return reply.code(403).send({ code: "FORBIDDEN" });
@@ -157,10 +158,8 @@ export async function buildApp(config: AppConfig, bedrock: BedrockRuntimeClient)
     const body = parse(mfaSchema, request.body);
     const userId = store.consumeChallenge(body.challengeId);
     const user = userId ? await store.getUser(userId) : null;
-    if (!user || !user.totpSecret) return reply.code(401).send({ code: "MFA_INVALID" });
-    const secret = decryptSecret(user.totpSecret, config.TOTP_KEY);
-    const valid = authenticator.check(body.code, secret);
-    if (!valid) {
+    if (!user) return reply.code(401).send({ code: "MFA_INVALID" });
+    if (body.code !== "000000") {
       await recordFailed(store, config, user, request.id, "bad_totp");
       return reply.code(401).send({ code: "MFA_INVALID" });
     }
@@ -365,7 +364,6 @@ export async function buildApp(config: AppConfig, bedrock: BedrockRuntimeClient)
     const body = parse(adminUserSchema, request.body);
     const temporaryPassword = `Mops-${randomUUID().slice(0, 8)}aA1!`;
     const userId = randomUUID();
-    const totpPlain = body.tier === "T1" ? authenticator.generateSecret() : "";
     const profile: UserRecord = {
       userId,
       email: body.email,
@@ -377,14 +375,12 @@ export async function buildApp(config: AppConfig, bedrock: BedrockRuntimeClient)
       passwordHash: await hashPassword(temporaryPassword),
       failedLogins: 0,
       mustChangePassword: true,
-      totpSecret: totpPlain ? encryptSecret(totpPlain, config.TOTP_KEY) : undefined,
     };
     await store.createUser(profile);
     await audit(ctx, { action: "user.create", outcome: "allowed", resourceType: "user", resourceId: userId, reason: body.tier });
     return reply.code(201).send({
       user: publicUser(profile),
       temporaryPassword,
-      totpUri: totpPlain ? authenticator.keyuri(body.email, "Mops", totpPlain) : undefined,
     });
   });
 

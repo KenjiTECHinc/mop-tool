@@ -6,7 +6,7 @@
     "email": "Email",
     "password": "Password",
     "code": "One-time code",
-    "mfa": "Enter the code from your authenticator.",
+    "mfa": "Enter the demo code 000000.",
     "newPassword": "Choose a new password",
     "change": "Change password"
   },
