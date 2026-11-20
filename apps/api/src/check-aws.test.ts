@@ -78,6 +78,26 @@ describe("check-aws secret hygiene", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("normalizes a CRLF-padded token before the client is used and redacts both forms", async () => {
+    const trimmed = "padded-bedrock-key";
+    const raw = `  ${trimmed}\r\n`;
+    stubEnv({
+      AWS_BEARER_TOKEN_BEDROCK: raw,
+      AWS_REGION: "ap-southeast-2",
+      BEDROCK_MODEL_ID: "test-model",
+    });
+    vi.spyOn(BedrockRuntimeClient.prototype, "send").mockImplementation(async () => {
+      expect(process.env.AWS_BEARER_TOKEN_BEDROCK).toBe(trimmed);
+      throw new Error(`Authorization: Bearer ${raw} rejected ${trimmed}`);
+    });
+    const { errors, logs, caught } = await runCheck();
+    const output = [...errors, ...logs].join("\n");
+    expect(caught).toMatchObject({ message: "exit:1" });
+    expect(output).toContain("[REDACTED]");
+    expect(output).not.toContain(trimmed);
+    expect(output).not.toContain(raw);
+  });
+
   it("rejects a whitespace-only token without printing it", async () => {
     stubEnv({
       AWS_BEARER_TOKEN_BEDROCK: "   ",

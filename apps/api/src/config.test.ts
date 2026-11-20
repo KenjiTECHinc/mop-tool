@@ -54,10 +54,17 @@ describe("loadConfig Bedrock API key", () => {
       OPENAI_BASE_URL: "https://api.openai.com/v1",
     });
     expect(config.AWS_BEARER_TOKEN_BEDROCK).toBe("unit-test-bedrock-key");
+    expect(process.env.AWS_BEARER_TOKEN_BEDROCK).toBe("unit-test-bedrock-key");
     expect(config.BEDROCK_MODEL_ID).toBe("test-model");
     expect(config.AWS_REGION).toBe("ap-southeast-2");
     expect(config).not.toHaveProperty("OPENAI_API_KEY");
     expect(config).not.toHaveProperty("OPENAI_BASE_URL");
+  });
+
+  it("writes a CRLF-padded key back to the environment the SDK reads", async () => {
+    const config = await load({ AWS_BEARER_TOKEN_BEDROCK: "  padded-bedrock-key\r\n" });
+    expect(config.AWS_BEARER_TOKEN_BEDROCK).toBe("padded-bedrock-key");
+    expect(process.env.AWS_BEARER_TOKEN_BEDROCK).toBe("padded-bedrock-key");
   });
 
   it("names AWS_BEARER_TOKEN_BEDROCK when the key is missing or blank", async () => {

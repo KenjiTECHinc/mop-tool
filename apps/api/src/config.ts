@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { config as loadDotenv } from "dotenv";
 import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
+import { installBedrockBearerToken } from "./bedrock-token.js";
 
 /** Directory of the nearest .env, so data paths stay stable when npm runs this package from apps/api. */
 function envAnchor(): string {
@@ -48,6 +49,7 @@ export function loadConfig(): AppConfig {
     const missing = parsed.error.issues.map((issue) => issue.path.join(".") || issue.message);
     throw new Error(`Missing or invalid environment. Fill these in .env before starting the API: ${missing.join(", ")}`);
   }
+  installBedrockBearerToken(parsed.data.AWS_BEARER_TOKEN_BEDROCK);
   return {
     ...parsed.data,
     DATABASE_PATH: anchored(parsed.data.DATABASE_PATH),
