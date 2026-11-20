@@ -29,6 +29,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     CORS_ORIGIN: "http://localhost:5173",
     ...overrides,
     HOST: overrides.HOST ?? "127.0.0.1",
+    DEMO_TOTP_BYPASS: overrides.DEMO_TOTP_BYPASS ?? false,
   };
 }
 

@@ -57,9 +57,9 @@ npm run dev
 
 ## 展示用使用者
 
-`npm run seed` 會給每位展示用使用者一組密碼。在 `.env` 設定 `DEMO_PASSWORD`（12 到 200 個字元，見 `.env.example`）可共用同一組密碼。種子程式接著會印出警告，說明共用密碼只供本機展示。不設定 `DEMO_PASSWORD` 時，種子程式會為每個人印出一次隨機密碼。Ada 的第二步驟驗證碼是 `000000`。
+`npm run seed` 會給每位展示用使用者一組密碼。在 `.env` 設定 `DEMO_PASSWORD`（12 到 200 個字元，見 `.env.example`）可共用同一組密碼。種子程式接著會印出警告，說明共用密碼只供本機展示。不設定 `DEMO_PASSWORD` 時，種子程式會為每個人印出一次隨機密碼。Ada（T1）需要驗證器產生的真正一次性驗證碼。展示用驗證碼 `000000` 只在 `DEMO_TOTP_BYPASS=true` 時有效。這個旗標預設關閉，Docker 裡也一樣。開啟時，API 會在啟動時印出警告。正式環境請不要設定。
 
-- ada.admin@mops.example，管理／資訊，T1，英文，Sandbox，驗證碼 000000
+- ada.admin@mops.example，管理／資訊，T1，英文，Sandbox。`DEMO_TOTP_BYPASS=true` 時，第二步驟是 `000000`。否則請用她的真正 TOTP 驗證碼。
 - chris.chen@mops.example，CTO，T2，英文，Apollo、Helios 與 Nexus
 - maya.chen@mops.example，產品經理，T2，英文，Apollo 與 Helios
 - sam.lee@mops.example，開發人員，T3，繁體中文，Apollo
@@ -82,7 +82,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-之後可以只用 `docker compose up`。介面是 http://localhost:5173，API 是 http://localhost:3001。
+之後可以只用 `docker compose up`。介面是 http://localhost:5173，API 是 http://localhost:3001。Compose 只把這兩個連接埠發佈在 `127.0.0.1`。
 
 頁面呼叫同一個來源的 `/api`。web 容器把這個路徑代理到 Compose 網路上的 API。瀏覽器留在 http://localhost:5173，所以 HttpOnly、SameSite=Strict 的工作階段 Cookie，以及 `X-Mops-Request: 1` 標頭仍然有效。`npm run dev` 不變：開發伺服器仍使用 `.env` 的 `VITE_API_URL`（http://localhost:3001），API 仍綁定 `127.0.0.1`。在 Compose 裡，API 監聽 `0.0.0.0`，web 容器與對外的連接埠才連得上。
 
@@ -94,7 +94,7 @@ API 在容器啟動時透過 Compose 的 `env_file` 讀取 `.env`。容器以非
 docker compose logs api
 ```
 
-有設定 `DEMO_PASSWORD` 時，每位展示用使用者共用該密碼，紀錄裡也會有只供本機展示的警告。沒有設定時，每個人的隨機密碼都在那份紀錄裡。Ada（T1）仍需要驗證碼 `000000`。T2 與 T3 只需要密碼。帳號列在上方的「展示用使用者」。
+有設定 `DEMO_PASSWORD` 時，每位展示用使用者共用該密碼，紀錄裡也會有只供本機展示的警告。沒有設定時，每個人的隨機密碼都在那份紀錄裡。T2 與 T3 只需要密碼。Ada（T1）需要真正的 TOTP 驗證碼，除非在啟動 API 前於 `.env` 設定 `DEMO_TOTP_BYPASS=true`。Compose 不會開啟這個旗標。設為 true 時，啟動紀錄會有警告，並接受 `000000`。帳號列在上方的「展示用使用者」。
 
 SQLite 與稽核紀錄放在具名磁碟區 `mops-data`（API 容器裡的 `/data/mops.sqlite` 與 `/data/audit.log`）。`docker compose down` 會保留磁碟區。下一次 `docker compose up` 看到資料庫就略過種子資料。`docker compose down -v` 會刪除磁碟區。下一次啟動會再寫入種子資料。
 

@@ -31,6 +31,9 @@ afterEach(() => {
 
 async function load(overrides: Record<string, string | undefined> = {}) {
   vi.resetModules();
+  vi.doMock("dotenv", () => ({
+    config: () => ({ parsed: {} }),
+  }));
   for (const [key, value] of Object.entries({ ...validEnv, ...overrides })) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -85,6 +88,14 @@ describe("loadConfig Bedrock API key", () => {
     });
     expect(config.AWS_BEARER_TOKEN_BEDROCK).toBe("not-a-structured-key");
     expect(config.AWS_PROFILE).toBe("mops-dev");
+  });
+
+  it("leaves DEMO_TOTP_BYPASS off unless it is the string true", async () => {
+    expect((await load()).DEMO_TOTP_BYPASS).toBe(false);
+    expect((await load({ DEMO_TOTP_BYPASS: undefined })).DEMO_TOTP_BYPASS).toBe(false);
+    expect((await load({ DEMO_TOTP_BYPASS: "" })).DEMO_TOTP_BYPASS).toBe(false);
+    expect((await load({ DEMO_TOTP_BYPASS: "false" })).DEMO_TOTP_BYPASS).toBe(false);
+    expect((await load({ DEMO_TOTP_BYPASS: "true" })).DEMO_TOTP_BYPASS).toBe(true);
   });
 
   it("keeps the local bind address on loopback unless HOST is set", async () => {

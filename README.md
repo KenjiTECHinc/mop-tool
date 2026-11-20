@@ -57,9 +57,9 @@ The session cookie is HttpOnly and SameSite=Strict. The browser sends `X-Mops-Re
 
 ## Demo users
 
-`npm run seed` gives every demo user a password. Set `DEMO_PASSWORD` in `.env` (12 to 200 characters; see `.env.example`) to share one password. Seed then prints a warning that the shared password is for the local demo only. Leave `DEMO_PASSWORD` unset and seed prints a random password for each person once. Ada's second step is the code `000000`.
+`npm run seed` gives every demo user a password. Set `DEMO_PASSWORD` in `.env` (12 to 200 characters; see `.env.example`) to share one password. Seed then prints a warning that the shared password is for the local demo only. Leave `DEMO_PASSWORD` unset and seed prints a random password for each person once. Ada (T1) needs a real authenticator code. The demo code `000000` works only when `DEMO_TOTP_BYPASS=true`. That flag is off by default, including in Docker. When it is on, the API prints a warning at startup. Leave it unset for any real deployment.
 
-- ada.admin@mops.example, Admin/IT, T1, English, Sandbox, code 000000
+- ada.admin@mops.example, Admin/IT, T1, English, Sandbox. With `DEMO_TOTP_BYPASS=true`, the second step is `000000`. Otherwise use her real TOTP code.
 - chris.chen@mops.example, CTO, T2, English, Apollo, Helios, and Nexus
 - maya.chen@mops.example, Product Manager, T2, English, Apollo and Helios
 - sam.lee@mops.example, Developer, T3, Traditional Chinese, Apollo
@@ -82,7 +82,7 @@ Fill `SESSION_SECRET`, `TOTP_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, and `BEDROCK_MODE
 docker compose up --build
 ```
 
-Later starts can use `docker compose up`. The UI is http://localhost:5173 and the API is http://localhost:3001.
+Later starts can use `docker compose up`. The UI is http://localhost:5173 and the API is http://localhost:3001. Compose publishes both ports on `127.0.0.1` only.
 
 The page calls `/api` on the same origin. The web container proxies that path to the API on the Compose network. The browser stays on http://localhost:5173, so the HttpOnly SameSite=Strict session cookie and the `X-Mops-Request: 1` header still apply. `npm run dev` is unchanged: the dev server still uses `VITE_API_URL` from `.env` (http://localhost:3001) and the API still binds `127.0.0.1`. Inside Compose the API listens on `0.0.0.0` so the web container and the published port can reach it.
 
@@ -94,7 +94,7 @@ The first start seeds demo data when the database file is missing. Passwords are
 docker compose logs api
 ```
 
-With `DEMO_PASSWORD` set, every demo user shares that password and the log includes the local-demo warning. Without it, each person gets a random password in that log. Ada (T1) still needs the code `000000`. T2 and T3 users sign in with the password only. The accounts are listed under Demo users above.
+With `DEMO_PASSWORD` set, every demo user shares that password and the log includes the local-demo warning. Without it, each person gets a random password in that log. T2 and T3 users sign in with the password only. Ada (T1) needs a real TOTP code unless you set `DEMO_TOTP_BYPASS=true` in `.env` before starting the API. Compose does not set that flag. When it is true, startup logs a warning and `000000` is accepted. The accounts are listed under Demo users above.
 
 SQLite and the audit log are stored on the named volume `mops-data` (`/data/mops.sqlite` and `/data/audit.log` in the API container). `docker compose down` keeps the volume. The next `docker compose up` sees the database and skips seeding. `docker compose down -v` deletes the volume. The next start seeds again.
 

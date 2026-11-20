@@ -92,7 +92,7 @@ describe("demo password is configured, not hard-coded", () => {
     const example = readFileSync(join(repoRoot, ".env.example"), "utf8");
     const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
     const infraReadme = readFileSync(join(repoRoot, "infra/README.md"), "utf8");
-    const seedSource = readFileSync(join(repoRoot, "scripts/seed.ts"), "utf8");
+    const seedSource = readFileSync(join(repoRoot, "apps/api/src/seed-cli.ts"), "utf8");
     const helperSource = readFileSync(join(repoRoot, "apps/api/src/auth/seed-password.ts"), "utf8");
     const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
 

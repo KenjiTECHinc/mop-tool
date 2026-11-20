@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json && node --input-type=module -e \"import { copyFileSync } from 'node:fs'; copyFileSync('src/db/schema.sql', 'dist/db/schema.sql')\"",
+    "start": "node dist/index.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

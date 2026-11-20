@@ -21,6 +21,7 @@ import {
 } from "@mops/shared";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { hashPassword, verifyPassword } from "./auth/crypto.js";
+import { totpCodeAccepted } from "./auth/demo-totp.js";
 import type { AppConfig } from "./config.js";
 import { Store, type UserRecord, openDatabase } from "./db/sqlite.js";
 import { ApiError, dayKey } from "./http.js";
@@ -159,7 +160,7 @@ export async function buildApp(config: AppConfig, bedrock: BedrockRuntimeClient)
     const userId = store.consumeChallenge(body.challengeId);
     const user = userId ? await store.getUser(userId) : null;
     if (!user) return reply.code(401).send({ code: "MFA_INVALID" });
-    if (body.code !== "000000") {
+    if (!totpCodeAccepted(config, user, body.code)) {
       await recordFailed(store, config, user, request.id, "bad_totp");
       return reply.code(401).send({ code: "MFA_INVALID" });
     }

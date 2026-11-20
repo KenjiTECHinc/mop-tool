@@ -18,9 +18,13 @@ RUN npm ci
 
 COPY packages/shared packages/shared
 COPY apps/api apps/api
-COPY scripts scripts
 
-RUN npm run build -w @mops/shared
+# Prune devDependencies, then delete anything npm kept because an optional
+# peer (i18next -> typescript) still pointed at a devDependency.
+RUN npm run build -w @mops/shared \
+  && npm run build -w @mops/api \
+  && npm prune --omit=dev \
+  && node --input-type=module -e "import { readFileSync, rmSync } from 'node:fs'; const files=['package.json','apps/api/package.json','apps/web/package.json','packages/shared/package.json','infra/package.json']; const devs=new Set(); for (const file of files) { for (const name of Object.keys(JSON.parse(readFileSync(file,'utf8')).devDependencies??{})) devs.add(name); } for (const name of devs) rmSync('node_modules/'+name,{recursive:true,force:true}); rmSync('node_modules/@types',{recursive:true,force:true});"
 
 FROM node:22-bookworm-slim AS runtime
 
