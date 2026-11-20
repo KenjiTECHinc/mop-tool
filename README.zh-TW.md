@@ -1,6 +1,6 @@
 [English](README.md) | 繁體中文
 
-# Mops
+# MOPs - Management Operations：AI 驅動的工單台
 
 人工智慧輔助的工單台。React 應用程式、API、SQLite 與登入都在你的電腦上執行。Amazon Bedrock 與 Guardrails 留在 AWS。
 
@@ -80,7 +80,7 @@ APOLLO-5 有一則英文留言，試圖指示助理。APOLLO-8 有同樣性質�
 
 瀏覽器、API、密碼、工作階段與 SQLite 都留在這台機器上。`ap-southeast-2` 的 Amazon Bedrock 收到的是提示、該層級的工具定義、遮罩後的工單摘錄，以及語言偏好。API 用 `AWS_BEARER_TOKEN_BEDROCK` 裡的 Bedrock API 金鑰（Bearer 驗證）呼叫 Bedrock Runtime `ConverseStream`。`AWS_PROFILE` 與 `APP_ROLE_ARN`（`MopsApiRole`）是選用的 SigV4 覆寫，以虛線畫出。AWS Budgets 的 `mops-one-dollar` 是選用的花費警示，同樣以虛線表示。設定了 `GUARDRAIL_ID` 時，同一個用戶端會呼叫 `ApplyGuardrail`。
 
-![Mops 本機應用程式以 Bearer 權杖呼叫 Amazon Bedrock](docs/architecture.zh-TW.svg)
+![MOPs 本機應用程式以 Bearer 權杖呼叫 Amazon Bedrock](docs/architecture.zh-TW.svg)
 
 可編輯的來源：[docs/architecture.zh-TW.drawio](docs/architecture.zh-TW.drawio)。
 

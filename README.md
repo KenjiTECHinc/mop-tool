@@ -1,6 +1,6 @@
 ﻿English | [繁體中文](README.zh-TW.md)
 
-# Mops
+# MOPs - Management Operations: AI-driven ticket desk
 
 An AI-assisted ticket desk. The React app, the API, SQLite, and login run on your machine. Amazon Bedrock and Guardrails stay in AWS.
 
@@ -80,7 +80,7 @@ APOLLO-5 has an English comment that tries to instruct the assistant. APOLLO-8 h
 
 The browser, the API, passwords, sessions, and SQLite stay on the machine. Amazon Bedrock in `ap-southeast-2` receives the prompt, the tool definitions for that tier, redacted ticket excerpts, and the language preference. The API calls Bedrock Runtime `ConverseStream` with the Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK` (bearer auth). `AWS_PROFILE` and `APP_ROLE_ARN` (`MopsApiRole`) are an optional SigV4 override, drawn with a dashed line. AWS Budgets `mops-one-dollar` is an optional spend alert, also dashed. `ApplyGuardrail` runs on the same client when `GUARDRAIL_ID` is set.
 
-![Mops local app calling Amazon Bedrock with a bearer token](docs/architecture.svg)
+![MOPs local app calling Amazon Bedrock with a bearer token](docs/architecture.svg)
 
 Editable source: [docs/architecture.drawio](docs/architecture.drawio).
 

@@ -8,8 +8,8 @@
         <mxCell id="title-group" connectable="0" style="group;fontFamily=Noto Sans CJK TC;" value="" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1720" height="83" as="geometry" />
         </mxCell>
-        <mxCell id="title-text" style="text;html=1;resizable=1;points=[];autosize=1;align=left;verticalAlign=top;spacingTop=-4;fontSize=30;fontStyle=1;fontFamily=Noto Sans CJK TC;" value="Mops 本機工單台與 Amazon Bedrock" vertex="1" parent="title-group">
-          <mxGeometry width="1200" height="42" as="geometry" />
+        <mxCell id="title-text" style="text;html=1;resizable=1;points=[];autosize=1;align=left;verticalAlign=top;spacingTop=-4;fontSize=30;fontStyle=1;fontFamily=Noto Sans CJK TC;" value="MOPs - Management Operations：AI 驅動的工單台" vertex="1" parent="title-group">
+          <mxGeometry width="1680" height="42" as="geometry" />
         </mxCell>
         <mxCell id="subtitle-text" style="text;html=1;resizable=0;points=[];autosize=1;align=left;verticalAlign=top;spacingTop=-4;fontSize=16;fontFamily=Noto Sans CJK TC;" value="密碼、工作階段與 SQLite 留在本機。ConverseStream 使用 Bearer 驗證。" vertex="1" parent="title-group">
           <mxGeometry x="5" y="40" width="1680" height="28" as="geometry" />
