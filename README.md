@@ -1,4 +1,6 @@
-﻿# Mops
+﻿English | [繁體中文](README.zh-TW.md)
+
+# Mops
 
 An AI-assisted ticket desk. The React app, the API, SQLite, and login run on your machine. Amazon Bedrock and Guardrails stay in AWS.
 
