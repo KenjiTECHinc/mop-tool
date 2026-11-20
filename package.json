@@ -23,5 +23,8 @@
     "@aws-sdk/credential-providers": "^3.940.0",
     "concurrently": "^9.2.1",
     "tsx": "^4.20.6"
+  },
+  "dependencies": {
+    "openai": "^7.60.0"
   }
 }

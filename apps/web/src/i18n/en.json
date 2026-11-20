@@ -10,7 +10,7 @@
     "newPassword": "Choose a new password",
     "change": "Change password"
   },
-  "nav": { "assistant": "Assistant", "tickets": "Tickets", "admin": "Admin", "ask": "Ask the assistant" },
+  "nav": { "assistant": "Assistant", "tickets": "Tickets", "admin": "Admin", "ask": "Ask the assistant", "signOut": "Sign out", "account": "Account menu" },
   "greeting": {
     "morning": "Good morning, {{name}}",
     "afternoon": "Good afternoon, {{name}}",

@@ -10,7 +10,7 @@
     "newPassword": "設定新密碼",
     "change": "變更密碼"
   },
-  "nav": { "assistant": "助理", "tickets": "工單", "admin": "管理", "ask": "詢問助理" },
+  "nav": { "assistant": "助理", "tickets": "工單", "admin": "管理", "ask": "詢問助理", "signOut": "登出", "account": "帳戶選單" },
   "greeting": {
     "morning": "{{name}}，早安",
     "afternoon": "{{name}}，午安",

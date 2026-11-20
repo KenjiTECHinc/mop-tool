@@ -1,9 +1,26 @@
+import { existsSync } from "node:fs";
 import { config as loadDotenv } from "dotenv";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 
-loadDotenv({ path: resolve(process.cwd(), ".env") });
-loadDotenv({ path: resolve(process.cwd(), "../../.env") });
+/** Directory of the nearest .env, so data paths stay stable when npm runs this package from apps/api. */
+function envAnchor(): string {
+  let dir = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(resolve(dir, ".env"))) return dir;
+    const parent = resolve(dir, "..");
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
+
+const anchor = envAnchor();
+loadDotenv({ path: resolve(anchor, ".env") });
+
+function anchored(value: string): string {
+  return isAbsolute(value) ? value : resolve(anchor, value);
+}
 
 const schema = z.object({
   AWS_REGION: z.string().min(1).default("ap-southeast-2"),
@@ -35,5 +52,9 @@ export function loadConfig(): AppConfig {
   if (parsed.data.OPENAI_BASE_URL.includes("api.openai.com")) {
     throw new Error("OPENAI_BASE_URL must be the Bedrock Mantle host, not api.openai.com.");
   }
-  return parsed.data;
+  return {
+    ...parsed.data,
+    DATABASE_PATH: anchored(parsed.data.DATABASE_PATH),
+    AUDIT_LOG_PATH: anchored(parsed.data.AUDIT_LOG_PATH),
+  };
 }

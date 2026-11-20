@@ -306,7 +306,7 @@ export async function buildApp(config: AppConfig, bedrock: BedrockRuntimeClient)
     const body = parse(chatSchema, request.body);
     const ctx = ctxFor(request, "ai");
     await store.consumeAiCall(ctx.actor.userId, config.AI_DAILY_CAP);
-    await writeSse(reply, async (emit) => {
+    await writeSse(reply, config.CORS_ORIGIN, async (emit) => {
       await runChat({
         ctx,
         config,
@@ -468,7 +468,7 @@ export async function buildApp(config: AppConfig, bedrock: BedrockRuntimeClient)
     await requireAdmin(ctx);
     const body = parse(chatSchema, request.body ?? { message: "Summarize unusual activity this week." });
     await store.consumeAiCall(ctx.actor.userId, config.AI_DAILY_CAP);
-    await writeSse(reply, async (emit) => {
+    await writeSse(reply, config.CORS_ORIGIN, async (emit) => {
       await runChat({
         ctx,
         config,
@@ -533,12 +533,15 @@ async function recordFailed(store: Store, config: AppConfig, user: UserRecord, r
   });
 }
 
-async function writeSse(reply: FastifyReply, run: (emit: (event: UiEvent) => void) => Promise<void>): Promise<void> {
+async function writeSse(reply: FastifyReply, origin: string, run: (emit: (event: UiEvent) => void) => Promise<void>): Promise<void> {
   reply.hijack();
   reply.raw.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
     connection: "keep-alive",
+    "access-control-allow-origin": origin,
+    "access-control-allow-credentials": "true",
+    vary: "Origin",
   });
   const emit = (event: UiEvent) => {
     reply.raw.write(`event: block\ndata: ${JSON.stringify(event)}\n\n`);

@@ -16,10 +16,16 @@ export function App() {
 }
 
 function Private() {
-  const { me, setUiLanguage } = useSession();
+  const { me, setUiLanguage, signOut } = useSession();
   if (!me || me.user.mustChangePassword) return <Navigate to="/login" replace />;
   return (
-    <AppShell name={me.user.name} jobTitle={me.user.jobTitle} tier={me.tier} onLanguage={(language) => void setUiLanguage(language)}>
+    <AppShell
+      name={me.user.name}
+      jobTitle={me.user.jobTitle}
+      tier={me.tier}
+      onLanguage={(language) => void setUiLanguage(language)}
+      onSignOut={() => void signOut()}
+    >
       <Routes>
         <Route path="/" element={<AssistantPage />} />
         <Route path="/tickets" element={<TicketsPage />} />

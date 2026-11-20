@@ -6,10 +6,16 @@ import type { Me } from "../types.ts";
 interface SessionValue {
   me: Me | null;
   refresh: () => Promise<void>;
+  signOut: () => Promise<void>;
   setUiLanguage: (language: "en" | "zh-TW") => Promise<void>;
 }
 
-const SessionContext = createContext<SessionValue>({ me: null, refresh: async () => undefined, setUiLanguage: async () => undefined });
+const SessionContext = createContext<SessionValue>({
+  me: null,
+  refresh: async () => undefined,
+  signOut: async () => undefined,
+  setUiLanguage: async () => undefined,
+});
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
@@ -25,6 +31,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const signOut = useCallback(async () => {
+    await api.logout().catch(() => undefined);
+    await refresh();
+  }, [refresh]);
+
   const setUiLanguage = useCallback(async (language: "en" | "zh-TW") => {
     await setLanguage(language);
     if (me) await api.setLanguage(language).catch(() => undefined);
@@ -35,7 +46,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   if (!ready) return null;
-  return <SessionContext.Provider value={{ me, refresh, setUiLanguage }}>{children}</SessionContext.Provider>;
+  return <SessionContext.Provider value={{ me, refresh, signOut, setUiLanguage }}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {

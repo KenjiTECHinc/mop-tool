@@ -6,13 +6,14 @@ interface AppShellProps {
   jobTitle: string;
   tier: "T1" | "T2" | "T3";
   onLanguage: (language: "en" | "zh-TW") => void;
+  onSignOut: () => void;
   children: ReactNode;
 }
 
-export function AppShell({ name, jobTitle, tier, onLanguage, children }: AppShellProps) {
+export function AppShell({ name, jobTitle, tier, onLanguage, onSignOut, children }: AppShellProps) {
   return (
     <>
-      <Header name={name} jobTitle={jobTitle} tier={tier} onLanguage={onLanguage} />
+      <Header name={name} jobTitle={jobTitle} tier={tier} onLanguage={onLanguage} onSignOut={onSignOut} />
       {children}
     </>
   );
