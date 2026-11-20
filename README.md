@@ -76,16 +76,144 @@ APOLLO-5 has an English comment that tries to instruct the assistant. APOLLO-8 h
 
 ## Architecture
 
-```text
-Browser (Vite, :5173) -- cookie --> API (Fastify, 127.0.0.1:3001)
-  argon2id, sessions, TOTP for T1
-  authorize() and the service layer
-  SQLite file and append-only audit log
-  BedrockRuntimeClient ConverseStream (AWS_BEARER_TOKEN_BEDROCK)
-  ApplyGuardrail on the same client when GUARDRAIL_ID is set
+The browser, the API, passwords, sessions, and SQLite stay on the machine. Amazon Bedrock in `ap-southeast-2` receives the prompt, the tool definitions for that tier, redacted ticket excerpts, and the language preference. The API calls Bedrock Runtime `ConverseStream` with the Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK` (bearer auth). `AWS_PROFILE` and `APP_ROLE_ARN` (`MopsApiRole`) are an optional SigV4 override, drawn with a dashed line. AWS Budgets `mops-one-dollar` is an optional spend alert, also dashed. `ApplyGuardrail` runs on the same client when `GUARDRAIL_ID` is set.
+
+![Mops local app calling Amazon Bedrock with a bearer token](docs/architecture.svg)
+
+Editable source: [docs/architecture.drawio](docs/architecture.drawio).
+
+## Database Schema
+
+SQLite file `data/mops.sqlite`, created from [apps/api/src/db/schema.sql](apps/api/src/db/schema.sql). `schema.sql` has no `FOREIGN KEY` or `REFERENCES` clauses. `apps/api/src/db/sqlite.ts` turns `foreign_keys` on, and with nothing declared SQLite does not enforce the links below. The API checks them in code. `tickets.assignee_id` may be null. `tickets.reporter_id` is required. `audit_log.project_id` and `pending_actions.project_id` are plain text and may be an empty string, so they are not drawn as foreign keys. `pending_actions.resource_id` is a ticket id or an empty string.
+
+```mermaid
+erDiagram
+  users ||--o{ sessions : "user_id"
+  users ||--o{ project_members : "user_id"
+  projects ||--o{ project_members : "project_id"
+  projects ||--o{ tickets : "project_id"
+  users ||--o{ tickets : "reporter_id"
+  users |o--o{ tickets : "assignee_id"
+  tickets ||--o{ comments : "ticket_id"
+  users ||--o{ comments : "author_id"
+  users ||--o{ audit_log : "actor_user_id"
+  users ||--o{ pending_actions : "user_id"
+
+  users {
+    TEXT user_id PK
+    TEXT email UK
+    TEXT name
+    TEXT job_title
+    TEXT tier
+    TEXT password_hash
+    TEXT totp_secret "nullable"
+    INTEGER failed_logins
+    TEXT locked_until "nullable"
+    INTEGER must_change_password
+    TEXT status
+    TEXT last_seen_at "nullable"
+    TEXT previous_seen_at "nullable"
+    TEXT preferred_language
+    TEXT ai_calls_day "nullable"
+    INTEGER ai_calls_count
+  }
+
+  sessions {
+    TEXT session_hash PK
+    TEXT user_id FK
+    TEXT kind
+    TEXT created_at
+    TEXT last_seen_at
+    TEXT expires_at
+  }
+
+  projects {
+    TEXT project_id PK
+    TEXT name
+    TEXT key
+    INTEGER is_sandbox
+    INTEGER next_number
+  }
+
+  project_members {
+    TEXT project_id PK, FK
+    TEXT user_id PK, FK
+    TEXT added_at
+  }
+
+  tickets {
+    TEXT ticket_id PK
+    TEXT project_id FK
+    TEXT title
+    TEXT description
+    TEXT type
+    TEXT status
+    TEXT priority
+    TEXT assignee_id FK "nullable"
+    TEXT reporter_id FK
+    TEXT labels
+    TEXT acceptance_criteria
+    TEXT created_at
+    TEXT updated_at
+    INTEGER version
+    TEXT created_via
+  }
+
+  comments {
+    TEXT comment_id PK
+    TEXT ticket_id FK
+    TEXT author_id FK
+    TEXT body
+    TEXT created_at
+    TEXT created_via
+  }
+
+  audit_log {
+    TEXT event_id PK
+    TEXT timestamp
+    TEXT actor_user_id FK
+    TEXT actor_tier
+    TEXT channel
+    TEXT action
+    TEXT resource_type
+    TEXT resource_id
+    TEXT project_id
+    TEXT outcome
+    TEXT tool_name
+    TEXT conversation_id
+    TEXT request_id
+    TEXT reason
+    INTEGER latency_ms "nullable"
+    INTEGER prompt_chars "nullable"
+    TEXT prompt_hash "nullable"
+  }
+
+  pending_actions {
+    TEXT action_id PK
+    TEXT user_id FK
+    TEXT tool_name
+    TEXT payload
+    TEXT status
+    TEXT conversation_id
+    TEXT created_at
+    TEXT expires_at
+    TEXT project_id
+    TEXT resource_id
+  }
 ```
 
-Only the prompt, role-filtered tool definitions, redacted ticket excerpts, and the language preference are sent to Bedrock. Passwords, sessions, and the database stay local.
+`project_members.project_id` and `project_members.user_id` are a composite primary key. Both are logical foreign keys, to `projects` and `users`.
+
+`audit_log` is append-only. Triggers `audit_no_update` and `audit_no_delete` run `BEFORE UPDATE` and `BEFORE DELETE` and abort with `audit_append_only`. The same events are also appended to `data/audit.log` without ticket text.
+
+Secondary indexes:
+
+- `members_by_user` on `project_members (user_id)`
+- `tickets_by_project` on `tickets (project_id)`
+- `tickets_by_assignee` on `tickets (assignee_id)`
+- `tickets_by_status` on `tickets (status)`
+- `comments_by_ticket` on `comments (ticket_id, created_at)`
+- `audit_by_time` on `audit_log (timestamp)`
 
 ## Assumptions
 
