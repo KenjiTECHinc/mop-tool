@@ -72,6 +72,7 @@ APOLLO-5 有一則英文留言，試圖指示助理。APOLLO-8 有同樣性質�
 
 - `npm test` 檢查權限、遮罩、鎖定、工作階段到期、T1 一次性驗證碼，以及稽核觸發器。
 - `npm run check:i18n` 會在英文與繁體中文檔案不一致時失敗。
+- `python3 scripts/render-db-schema.py` 依這兩份 README 的 Mermaid 區塊重畫 `docs/` 裡的結構圖。需要 `mmdc`（`npx --yes @mermaid-js/mermaid-cli`）、Google Chrome，以及 Noto Sans CJK TC。
 - `npm run eval` 把雙語提示集送進真正的協調器，並消耗 Bedrock 額度。
 - `npm run check:aws` 用一次短暫的 Converse 呼叫檢查 `AWS_BEARER_TOKEN_BEDROCK`、`AWS_REGION` 與 `BEDROCK_MODEL_ID`。它不呼叫 STS。Bedrock API 金鑰不能呼叫 `GetCallerIdentity`。
 - 展示專案前先跑 `npm audit`。
@@ -87,6 +88,13 @@ APOLLO-5 有一則英文留言，試圖指示助理。APOLLO-8 有同樣性質�
 ## 資料庫結構
 
 SQLite 檔案 `data/mops.sqlite` 由 [apps/api/src/db/schema.sql](apps/api/src/db/schema.sql) 建立。`schema.sql` 沒有 `FOREIGN KEY` 或 `REFERENCES` 子句。`apps/api/src/db/sqlite.ts` 會開啟 `foreign_keys`，但因為沒有宣告任何條件，SQLite 不會強制下面這些關聯。API 在程式裡檢查它們。`tickets.assignee_id` 可以是 null。`tickets.reporter_id` 必填。`audit_log.project_id` 與 `pending_actions.project_id` 是純文字，可以是空字串，所以沒有畫成外鍵。`pending_actions.resource_id` 是工單識別碼或空字串。
+
+[![SQLite 結構：users、sessions、projects、tickets、comments、audit_log 與 pending_actions](docs/db-schema.zh-TW.png)](docs/db-schema.zh-TW.svg)
+
+同一張圖改成由上往下排列，讓欄位在手機上仍然看得清楚。
+
+<details>
+<summary>Mermaid 原始碼</summary>
 
 ```mermaid
 erDiagram
@@ -203,6 +211,8 @@ erDiagram
     TEXT resource_id
   }
 ```
+
+</details>
 
 `project_members.project_id` 與 `project_members.user_id` 是複合主鍵。兩者都是邏輯外鍵，分別指向 `projects` 與 `users`。
 

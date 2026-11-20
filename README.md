@@ -72,6 +72,7 @@ APOLLO-5 has an English comment that tries to instruct the assistant. APOLLO-8 h
 
 - `npm test` checks permissions, redaction, lockout, session expiry, T1 one-time codes, and the audit triggers.
 - `npm run check:i18n` fails when the English and Traditional Chinese files diverge.
+- `python3 scripts/render-db-schema.py` redraws the schema images in `docs/` from the Mermaid blocks in these READMEs. It needs `mmdc` (`npx --yes @mermaid-js/mermaid-cli`), Google Chrome, and Noto Sans CJK TC.
 - `npm run eval` sends the bilingual prompt set through the real orchestrator and spends Bedrock credits.
 - `npm run check:aws` checks `AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION`, and `BEDROCK_MODEL_ID` with one short Converse call. It does not call STS. Bedrock API keys cannot call `GetCallerIdentity`.
 - `npm audit` before you present the project.
@@ -87,6 +88,13 @@ Editable source: [docs/architecture.drawio](docs/architecture.drawio).
 ## Database Schema
 
 SQLite file `data/mops.sqlite`, created from [apps/api/src/db/schema.sql](apps/api/src/db/schema.sql). `schema.sql` has no `FOREIGN KEY` or `REFERENCES` clauses. `apps/api/src/db/sqlite.ts` turns `foreign_keys` on, and with nothing declared SQLite does not enforce the links below. The API checks them in code. `tickets.assignee_id` may be null. `tickets.reporter_id` is required. `audit_log.project_id` and `pending_actions.project_id` are plain text and may be an empty string, so they are not drawn as foreign keys. `pending_actions.resource_id` is a ticket id or an empty string.
+
+[![SQLite schema for users, sessions, projects, tickets, comments, the audit log, and pending actions](docs/db-schema.png)](docs/db-schema.svg)
+
+The same diagram is drawn top to bottom so the columns stay readable on a phone.
+
+<details>
+<summary>Mermaid source</summary>
 
 ```mermaid
 erDiagram
@@ -203,6 +211,8 @@ erDiagram
     TEXT resource_id
   }
 ```
+
+</details>
 
 `project_members.project_id` and `project_members.user_id` are a composite primary key. Both are logical foreign keys, to `projects` and `users`.
 
