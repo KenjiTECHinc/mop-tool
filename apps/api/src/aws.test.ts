@@ -1,4 +1,4 @@
-import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { describe, expect, it } from "vitest";
 import { bedrockClientConfig, createBedrock, usesIamOverride } from "./aws.js";
 import type { AppConfig } from "./config.js";
@@ -60,5 +60,58 @@ describe("createBedrock auth setup", () => {
     const options = bedrockClientConfig(auth({ AWS_PROFILE: "", APP_ROLE_ARN: "" }));
     expect(options).not.toHaveProperty("credentials");
     expect(options.authSchemePreference).toEqual(["httpBearerAuth"]);
+  });
+
+  it("signs with the bearer env value even when ambient IAM keys are present", async () => {
+    const previous = {
+      AWS_BEARER_TOKEN_BEDROCK: process.env.AWS_BEARER_TOKEN_BEDROCK,
+      AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+      AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+      AWS_SESSION_TOKEN: process.env.AWS_SESSION_TOKEN,
+    };
+    process.env.AWS_BEARER_TOKEN_BEDROCK = token;
+    process.env.AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE";
+    process.env.AWS_SECRET_ACCESS_KEY = "ambient-secret-access-key";
+    delete process.env.AWS_SESSION_TOKEN;
+    try {
+      const client = createBedrock(auth());
+      await expect(client.config.authSchemePreference()).resolves.toEqual(["httpBearerAuth"]);
+      const stop = {
+        destroy() {},
+        handle: async () => {
+          throw new Error("stopped-before-network");
+        },
+      };
+      const requestHandler = client.config.requestHandler as unknown;
+      client.config.requestHandler = (typeof requestHandler === "function" ? async () => stop : stop) as typeof client.config.requestHandler;
+      client.middlewareStack.add(
+        (next) => async (args) => {
+          const read = () => {
+            const request = args.request as { headers?: Record<string, string> };
+            return request.headers?.authorization ?? request.headers?.Authorization ?? "";
+          };
+          try {
+            await next(args);
+          } catch (error) {
+            const header = read();
+            if (header) throw new Error(`HEADER ${header}`, { cause: error });
+            throw error;
+          }
+          const header = read();
+          if (header) throw new Error(`HEADER ${header}`);
+          throw new Error("authorization header was not set");
+        },
+        { step: "finalizeRequest", priority: "low", name: "captureBearerAuth" },
+      );
+      await expect(client.send(new ConverseCommand({
+        modelId: "test-model",
+        messages: [{ role: "user", content: [{ text: "hi" }] }],
+      }))).rejects.toThrow(`HEADER Bearer ${token}`);
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 });

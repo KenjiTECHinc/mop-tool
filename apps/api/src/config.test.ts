@@ -66,6 +66,20 @@ describe("loadConfig Bedrock API key", () => {
     await expect(load({ AWS_BEARER_TOKEN_BEDROCK: "" })).rejects.toThrow(/AWS_BEARER_TOKEN_BEDROCK/);
   });
 
+  it("still requires the bearer token when an IAM profile or role is set", async () => {
+    await expect(load({
+      AWS_BEARER_TOKEN_BEDROCK: undefined,
+      AWS_PROFILE: "mops-dev",
+      APP_ROLE_ARN: "arn:aws:iam::123456789012:role/MopsApiRole",
+    })).rejects.toThrow(/AWS_BEARER_TOKEN_BEDROCK/);
+    const config = await load({
+      AWS_BEARER_TOKEN_BEDROCK: "not-a-structured-key",
+      AWS_PROFILE: "mops-dev",
+    });
+    expect(config.AWS_BEARER_TOKEN_BEDROCK).toBe("not-a-structured-key");
+    expect(config.AWS_PROFILE).toBe("mops-dev");
+  });
+
   it("does not put the API key in the validation error", async () => {
     await expect(load({ BEDROCK_MODEL_ID: "" })).rejects.toThrow(/BEDROCK_MODEL_ID/);
     try {

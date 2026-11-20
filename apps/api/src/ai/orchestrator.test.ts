@@ -309,5 +309,277 @@ describe("ConverseStream orchestration", () => {
       "INPUT",
       "OUTPUT",
     ]);
+    expect(JSON.stringify(outputGuard)).not.toContain("unit-test-bedrock-key");
+  });
+
+  it("joins incremental tool-use JSON deltas before invoking the tool", async () => {
+    const appConfig = config();
+    const pieces = JSON.stringify({ projectId: "apollo" });
+    const chunks = [pieces.slice(0, 1), pieces.slice(1, -1), pieces.slice(-1)];
+    const { client, commands } = mockBedrock([
+      [
+        { contentBlockStart: { contentBlockIndex: 0, start: { toolUse: { toolUseId: "call-search", name: "search_tickets" } } } },
+        ...chunks.map((input) => ({ contentBlockDelta: { contentBlockIndex: 0, delta: { toolUse: { input } } } })),
+        { contentBlockStop: { contentBlockIndex: 0 } },
+        { messageStop: { stopReason: "tool_use" } },
+      ],
+      [...textDeltas(["No matches."]), { messageStop: { stopReason: "end_turn" } }],
+    ]);
+    const events: UiEvent[] = [];
+    await runChat({
+      ctx: ctx(appConfig),
+      config: appConfig,
+      bedrock: client,
+      message: "Search apollo",
+      conversationId: "conv-deltas",
+      hmacKey: appConfig.SESSION_SECRET,
+      emit: (event) => events.push(event),
+    });
+    expect(events.some((event) => event.type === "tool" && event.name === "search_tickets")).toBe(true);
+    const followUp = commands[1];
+    expect(followUp).toBeInstanceOf(ConverseStreamCommand);
+    if (!(followUp instanceof ConverseStreamCommand)) return;
+    expect(followUp.input.messages?.at(-2)?.content?.[0]).toMatchObject({
+      toolUse: { name: "search_tickets", toolUseId: "call-search", input: { projectId: "apollo" } },
+    });
+  });
+
+  it("treats empty and invalid tool JSON as an empty object and still returns a tool result", async () => {
+    const appConfig = config();
+    const { client, commands } = mockBedrock([
+      [
+        { contentBlockStart: { contentBlockIndex: 0, start: { toolUse: { toolUseId: "call-empty", name: "get_briefing_data" } } } },
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { toolUse: { input: "" } } } },
+        { contentBlockStop: { contentBlockIndex: 0 } },
+      ],
+      [...textDeltas(["Empty ok."])],
+      [
+        { contentBlockStart: { contentBlockIndex: 0, start: { toolUse: { toolUseId: "call-bad", name: "get_briefing_data" } } } },
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { toolUse: { input: '{"projectId":' } } } },
+        { messageStop: { stopReason: "max_tokens" } },
+      ],
+      [...textDeltas(["Invalid ok."])],
+    ]);
+    await runChat({
+      ctx: ctx(appConfig),
+      config: appConfig,
+      bedrock: client,
+      message: "Brief me",
+      conversationId: "conv-empty-tool",
+      hmacKey: appConfig.SESSION_SECRET,
+      emit: () => undefined,
+    });
+    await runChat({
+      ctx: ctx(appConfig),
+      config: appConfig,
+      bedrock: client,
+      message: "Brief me again",
+      conversationId: "conv-bad-tool",
+      hmacKey: appConfig.SESSION_SECRET,
+      emit: () => undefined,
+    });
+    const emptyFollowUp = commands[1];
+    const invalidFollowUp = commands[3];
+    expect(emptyFollowUp).toBeInstanceOf(ConverseStreamCommand);
+    expect(invalidFollowUp).toBeInstanceOf(ConverseStreamCommand);
+    if (!(emptyFollowUp instanceof ConverseStreamCommand) || !(invalidFollowUp instanceof ConverseStreamCommand)) return;
+    expect(emptyFollowUp.input.messages?.at(-2)?.content?.[0]).toMatchObject({
+      toolUse: { toolUseId: "call-empty", input: {} },
+    });
+    expect(invalidFollowUp.input.messages?.at(-2)?.content?.[0]).toMatchObject({
+      toolUse: { toolUseId: "call-bad", input: {} },
+    });
+    expect(JSON.stringify(invalidFollowUp.input.messages?.at(-1))).toContain("toolResult");
+  });
+
+  it("finishes a text reply for end_turn, max_tokens, and guardrail_intervened stop events", async () => {
+    const appConfig = config();
+    for (const stopReason of ["end_turn", "max_tokens", "guardrail_intervened", "content_filtered"]) {
+      const { client } = mockBedrock([[...textDeltas(["Done."]), { messageStop: { stopReason } }]]);
+      const events: UiEvent[] = [];
+      await runChat({
+        ctx: ctx(appConfig),
+        config: appConfig,
+        bedrock: client,
+        message: "Hello",
+        conversationId: `conv-stop-${stopReason}`,
+        hmacKey: appConfig.SESSION_SECRET,
+        emit: (event) => events.push(event),
+      });
+      expect(events).toEqual([{ type: "text", delta: "Done." }]);
+    }
+  });
+
+  it("completes when the stream is missing or empty", async () => {
+    const appConfig = config();
+    const send = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ stream: undefined })
+      .mockResolvedValueOnce(stream([]));
+    const client = { send } as unknown as BedrockRuntimeClient;
+    const events: UiEvent[] = [];
+    for (const conversationId of ["conv-no-stream", "conv-undefined-stream", "conv-empty-stream"]) {
+      await runChat({
+        ctx: ctx(appConfig),
+        config: appConfig,
+        bedrock: client,
+        message: "Hello",
+        conversationId,
+        hmacKey: appConfig.SESSION_SECRET,
+        emit: (event) => events.push(event),
+      });
+    }
+    expect(events).toEqual([]);
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  it("drops stream exception bodies and keeps a planted token out of the thrown error", async () => {
+    const appConfig = config();
+    const planted = "stream-fault-token-should-not-surface";
+    const faults = [
+      ["internalServerException", "internal"],
+      ["modelStreamErrorException", "model"],
+      ["validationException", "validation"],
+      ["throttlingException", "throttling"],
+      ["serviceUnavailableException", "unavailable"],
+    ] as const;
+    for (const [key, label] of faults) {
+      const send = vi.fn(async () => stream([
+        { contentBlockDelta: { contentBlockIndex: 0, delta: { text: "Partial" } } },
+        { [key]: { message: `Bearer ${planted}` } },
+      ]));
+      const events: UiEvent[] = [];
+      await expect(runChat({
+        ctx: ctx(appConfig),
+        config: appConfig,
+        bedrock: { send } as unknown as BedrockRuntimeClient,
+        message: "Hello",
+        conversationId: `conv-fault-${label}`,
+        hmacKey: appConfig.SESSION_SECRET,
+        emit: (event) => events.push(event),
+      })).rejects.toThrow(`Bedrock stream ${label}`);
+      expect(events).toEqual([{ type: "text", delta: "Partial" }]);
+      try {
+        await runChat({
+          ctx: ctx(appConfig),
+          config: appConfig,
+          bedrock: { send } as unknown as BedrockRuntimeClient,
+          message: "Hello",
+          conversationId: `conv-fault-body-${label}`,
+          hmacKey: appConfig.SESSION_SECRET,
+          emit: () => undefined,
+        });
+      } catch (error) {
+        expect(error instanceof Error ? error.message : "").not.toContain(planted);
+      }
+    }
+  });
+
+  it("propagates an error thrown mid-stream after text already emitted", async () => {
+    const appConfig = config();
+    const send = vi.fn(async () => ({
+      stream: (async function* () {
+        yield { contentBlockDelta: { contentBlockIndex: 0, delta: { text: "Partial" } } };
+        throw new Error("socket reset");
+      })(),
+    }));
+    const events: UiEvent[] = [];
+    await expect(runChat({
+      ctx: ctx(appConfig),
+      config: appConfig,
+      bedrock: { send } as unknown as BedrockRuntimeClient,
+      message: "Hello",
+      conversationId: "conv-throw",
+      hmacKey: appConfig.SESSION_SECRET,
+      emit: (event) => events.push(event),
+    })).rejects.toThrow("socket reset");
+    expect(events).toEqual([{ type: "text", delta: "Partial" }]);
+  });
+
+  it("does not call ApplyGuardrail when the guardrail id is blank", async () => {
+    const appConfig = config({ GUARDRAIL_ID: "", GUARDRAIL_VERSION: "" });
+    const { client, commands } = mockBedrock([[...textDeltas(["Hello."])]]);
+    await runChat({
+      ctx: ctx(appConfig),
+      config: appConfig,
+      bedrock: client,
+      message: "Hello",
+      conversationId: "conv-no-guard",
+      hmacKey: appConfig.SESSION_SECRET,
+      emit: () => undefined,
+    });
+    expect(commands.some((command) => command instanceof ApplyGuardrailCommand)).toBe(false);
+    expect(commands.some((command) => command instanceof ConverseStreamCommand)).toBe(true);
+  });
+
+  it("stops the chat when ApplyGuardrail throws and does not call ConverseStream", async () => {
+    const appConfig = config({ GUARDRAIL_ID: "gr-test", GUARDRAIL_VERSION: "1" });
+    const send = vi.fn(async (command: ApplyGuardrailCommand | ConverseStreamCommand) => {
+      if (command instanceof ApplyGuardrailCommand) throw new Error("guardrail unavailable");
+      return stream([]);
+    });
+    await expect(runChat({
+      ctx: ctx(appConfig),
+      config: appConfig,
+      bedrock: { send } as unknown as BedrockRuntimeClient,
+      message: "Hello",
+      conversationId: "conv-guard-throw",
+      hmacKey: appConfig.SESSION_SECRET,
+      emit: () => undefined,
+    })).rejects.toThrow("guardrail unavailable");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0]).toBeInstanceOf(ApplyGuardrailCommand);
+  });
+
+  it("withholds retrieved ticket text from the model when ApplyGuardrail intervenes", async () => {
+    const appConfig = config({ GUARDRAIL_ID: "gr-test", GUARDRAIL_VERSION: "DRAFT" });
+    const context = ctx(appConfig);
+    await context.store.putProject({ projectId: "apollo", name: "Apollo", key: "APOLLO", isSandbox: false, nextNumber: 2 });
+    await context.store.setMember("apollo", "dev-1", true);
+    await context.store.putTicket({
+      projectId: "apollo",
+      ticketId: "APOLLO-1",
+      title: "Login",
+      description: "secret body",
+      type: "bug",
+      status: "todo",
+      priority: "high",
+      reporterId: "dev-1",
+      labels: [],
+      acceptanceCriteria: "",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      version: 1,
+      createdVia: "ui",
+    });
+    const commands: Array<ConverseStreamCommand | ApplyGuardrailCommand> = [];
+    const send = vi.fn(async (command: ConverseStreamCommand | ApplyGuardrailCommand) => {
+      commands.push(command);
+      if (command instanceof ApplyGuardrailCommand) {
+        const block = command.input.content?.[0];
+        const text = block && "text" in block ? block.text?.text ?? "" : "";
+        return { action: text.includes("secret body") ? "GUARDRAIL_INTERVENED" : "NONE" };
+      }
+      const converseCount = commands.filter((item) => item instanceof ConverseStreamCommand).length;
+      if (converseCount === 1) return stream(toolUse(0, "call-ticket", "get_ticket", JSON.stringify({ ticketId: "APOLLO-1" })));
+      return stream(textDeltas(["Blocked."]));
+    });
+    const events: UiEvent[] = [];
+    await runChat({
+      ctx: context,
+      config: appConfig,
+      bedrock: { send } as unknown as BedrockRuntimeClient,
+      message: "Open APOLLO-1",
+      conversationId: "conv-retrieved",
+      hmacKey: appConfig.SESSION_SECRET,
+      emit: (event) => events.push(event),
+    });
+    const followUp = commands.filter((command) => command instanceof ConverseStreamCommand).at(1);
+    expect(followUp).toBeInstanceOf(ConverseStreamCommand);
+    if (!(followUp instanceof ConverseStreamCommand)) return;
+    const result = JSON.stringify(followUp.input.messages?.at(-1));
+    expect(result).toContain("guardrail_blocked");
+    expect(result).not.toContain("secret body");
+    expect(events.some((event) => event.type === "ticket" && event.ticket.ticketId === "APOLLO-1")).toBe(true);
   });
 });
