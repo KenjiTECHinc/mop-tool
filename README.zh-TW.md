@@ -57,9 +57,9 @@ npm run dev
 
 ## 展示用使用者
 
-`npm run seed` 會給每位展示用使用者一組密碼。在 `.env` 設定 `DEMO_PASSWORD`（12 到 200 個字元，見 `.env.example`）可共用同一組密碼。種子程式接著會印出警告，說明共用密碼只供本機展示。不設定 `DEMO_PASSWORD` 時，種子程式會為每個人印出一次隨機密碼。Ada 的第二步驟驗證碼是 `000000`。
+`npm run seed` 會給每位展示用使用者一組密碼。在 `.env` 設定 `DEMO_PASSWORD`（12 到 200 個字元，見 `.env.example`）可共用同一組密碼。種子程式接著會印出警告，說明共用密碼只供本機展示。不設定 `DEMO_PASSWORD` 時，種子程式會為每個人印出一次隨機密碼。Ada（T1）會得到一組驗證器密鑰。種子程式只印出一次 base32 密鑰與 `otpauth://` 網址。把密鑰加進驗證器，再用它產生的當下驗證碼。密鑰不會寫進稽核紀錄，也不會再印一次。如果弄丟了，刪掉資料庫再跑一次種子。展示用驗證碼 `000000` 只在 `DEMO_TOTP_BYPASS=true` 時有效。這個旗標預設關閉，Docker 裡也一樣。開啟時，API 會在啟動時印出警告。正式環境請不要設定。
 
-- ada.admin@mops.example，管理／資訊，T1，英文，Sandbox，驗證碼 000000
+- ada.admin@mops.example，管理／資訊，T1，英文，Sandbox。第二步驟是種子程式印出的驗證器密鑰所產生的驗證碼。`DEMO_TOTP_BYPASS=true` 時，第二步驟是 `000000`。
 - chris.chen@mops.example，CTO，T2，英文，Apollo、Helios 與 Nexus
 - maya.chen@mops.example，產品經理，T2，英文，Apollo 與 Helios
 - sam.lee@mops.example，開發人員，T3，繁體中文，Apollo
@@ -67,6 +67,36 @@ npm run dev
 - riley.park@mops.example，開發人員，T3，英文，Helios
 
 APOLLO-5 有一則英文留言，試圖指示助理。APOLLO-8 有同樣性質的中文留言。
+
+## 用 Docker 執行
+
+Docker Compose 會一起啟動介面與 API。你仍然要填 `.env`。那個檔案不會被複製進任何一個映像。
+
+```bash
+cp .env.example .env
+```
+
+填入 `SESSION_SECRET`、`TOTP_KEY`、`AWS_BEARER_TOKEN_BEDROCK` 與 `BEDROCK_MODEL_ID`。`DEMO_PASSWORD` 可選（12 到 200 個字元）。
+
+```bash
+docker compose up --build
+```
+
+之後可以只用 `docker compose up`。介面是 http://localhost:5173，API 是 http://localhost:3001。Compose 只把這兩個連接埠發佈在 `127.0.0.1`。
+
+頁面呼叫同一個來源的 `/api`。web 容器把這個路徑代理到 Compose 網路上的 API。瀏覽器留在 http://localhost:5173，所以 HttpOnly、SameSite=Strict 的工作階段 Cookie，以及 `X-Mops-Request: 1` 標頭仍然有效。`npm run dev` 不變：開發伺服器仍使用 `.env` 的 `VITE_API_URL`（http://localhost:3001），API 仍綁定 `127.0.0.1`。在 Compose 裡，API 監聽 `0.0.0.0`，web 容器與對外的連接埠才連得上。
+
+API 在容器啟動時透過 Compose 的 `env_file` 讀取 `.env`。容器以非 root 使用者執行。
+
+第一次啟動時，若資料庫檔案不存在，會寫入展示資料。密碼與 Ada 的驗證器密鑰只在 API 紀錄裡印出一次：
+
+```bash
+docker compose logs api
+```
+
+有設定 `DEMO_PASSWORD` 時，每位展示用使用者共用該密碼，紀錄裡也會有只供本機展示的警告。沒有設定時，每個人的隨機密碼都在那份紀錄裡。T2 與 T3 只需要密碼。Ada（T1）：從第一次的紀錄裡，把 `Ada authenticator secret` 下一行的 base32 密鑰複製到驗證器，或開啟 `otpauth://` 網址。在 `.env` 設定 `DEMO_TOTP_BYPASS=true` 是只供展示的捷徑，會接受 `000000`，並在啟動時寫下警告。Compose 不會開啟這個旗標。帳號列在上方的「展示用使用者」。
+
+SQLite 與稽核紀錄放在具名磁碟區 `mops-data`（API 容器裡的 `/data/mops.sqlite` 與 `/data/audit.log`）。驗證器密鑰不在稽核紀錄裡。`docker compose down` 會保留磁碟區。下一次 `docker compose up` 看到資料庫就略過種子資料，所以不會再印密鑰。`docker compose down -v` 會刪除磁碟區。下一次啟動會再寫入種子資料，並印出新的密鑰。
 
 ## 指令
 

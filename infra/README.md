@@ -27,7 +27,7 @@ npm run seed
 npm run dev
 ```
 
-`seed` creates `data/mops.sqlite`. Ada's second step is the code `000000`. With `DEMO_PASSWORD` unset, it prints a random password for each demo user once. With `DEMO_PASSWORD` set, every seeded user shares that password and seed prints a warning that this is for the local demo only.
+`seed` creates `data/mops.sqlite`. It prints Ada's base32 authenticator secret and an `otpauth://` URL once. Add that secret to an authenticator app. The secret is not written to the audit log and is not printed again. `DEMO_TOTP_BYPASS=true` accepts `000000` and makes the API log a startup warning. The flag is off by default. With `DEMO_PASSWORD` unset, seed prints a random password for each demo user once. With `DEMO_PASSWORD` set, every seeded user shares that password and seed prints a warning that this is for the local demo only.
 
 ## Bedrock API key (local/demo)
 

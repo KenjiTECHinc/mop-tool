@@ -38,7 +38,11 @@ const schema = z.object({
   AI_MAX_TOKENS: z.coerce.number().int().positive().max(2000).default(800),
   AI_DAILY_CAP: z.coerce.number().int().positive().default(40),
   PORT: z.coerce.number().int().positive().default(3001),
+  // Loopback for local `npm run dev`. Compose sets 0.0.0.0 so the web container and published port can connect.
+  HOST: z.string().min(1).default("127.0.0.1"),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),
+  // Only the exact string "true" opts in. Unset, empty, and "false" stay off.
+  DEMO_TOTP_BYPASS: z.preprocess((value) => value === "true", z.boolean()),
 });
 
 export type AppConfig = z.infer<typeof schema>;

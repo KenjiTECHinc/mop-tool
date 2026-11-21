@@ -1,0 +1,49 @@
+# Local demo stack. Secrets stay in `.env` (env_file) and are not image layers.
+# `environment` overrides the relative data paths from `.env.example` so SQLite
+# and the audit log land on the named volume.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3001"
+      DATABASE_PATH: /data/mops.sqlite
+      AUDIT_LOG_PATH: /data/audit.log
+      CORS_ORIGIN: http://localhost:5173
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - mops-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mops-data:

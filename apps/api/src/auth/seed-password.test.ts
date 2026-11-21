@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
+import { authenticator } from "otplib";
 import { describe, expect, it } from "vitest";
 import { DEMO_PASSWORD_WARNING, randomDemoPassword, resolveSeedPassword } from "./seed-password.js";
 
@@ -92,7 +93,7 @@ describe("demo password is configured, not hard-coded", () => {
     const example = readFileSync(join(repoRoot, ".env.example"), "utf8");
     const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
     const infraReadme = readFileSync(join(repoRoot, "infra/README.md"), "utf8");
-    const seedSource = readFileSync(join(repoRoot, "scripts/seed.ts"), "utf8");
+    const seedSource = readFileSync(join(repoRoot, "apps/api/src/seed-cli.ts"), "utf8");
     const helperSource = readFileSync(join(repoRoot, "apps/api/src/auth/seed-password.ts"), "utf8");
     const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
 
@@ -135,11 +136,12 @@ describe("npm run seed password modes", () => {
     process.env.BEDROCK_MODEL_ID = baseEnv.BEDROCK_MODEL_ID;
     process.env.AWS_PROFILE = "";
     process.env.APP_ROLE_ARN = "";
+    delete process.env.DEMO_TOTP_BYPASS;
 
     const { loadConfig } = await import("../config.js");
     const { createBedrock } = await import("../aws.js");
     const { buildApp } = await import("../app.js");
-    const config = loadConfig();
+    const config = { ...(await loadConfig()), DEMO_TOTP_BYPASS: false };
     const app = await buildApp(config, createBedrock(config));
     for (const email of ["chris.chen@mops.example", "maya.chen@mops.example", "sam.lee@mops.example", "jordan.wu@mops.example", "riley.park@mops.example"]) {
       const response = await app.inject({
@@ -158,7 +160,49 @@ describe("npm run seed password modes", () => {
       payload: { email: "ada.admin@mops.example", password: "123456789012" },
     });
     expect(ada.statusCode).toBe(200);
-    expect(ada.json().mfaRequired).toBe(true);
+    const adaBody = ada.json() as { mfaRequired: boolean; challengeId: string };
+    expect(adaBody.mfaRequired).toBe(true);
+    const secretLine = stdout.split("\n").map((line) => line.trim()).find((line) => /^[A-Z2-7]+=*$/.test(line));
+    expect(secretLine).toBeTruthy();
+    const adaSecret = secretLine!;
+    expect(stdout).toContain("otpauth://totp/");
+    expect(stdout).toContain(adaSecret);
+    const current = authenticator.generate(adaSecret);
+    if (current !== "000000") {
+      const wrong = await app.inject({
+        method: "POST",
+        url: "/auth/mfa/verify",
+        headers: { "x-mops-request": "1" },
+        payload: { challengeId: adaBody.challengeId, code: "000000" },
+      });
+      expect(wrong.statusCode).toBe(401);
+    }
+    const again = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      headers: { "x-mops-request": "1" },
+      payload: { email: "ada.admin@mops.example", password: "123456789012" },
+    });
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/auth/mfa/verify",
+      headers: { "x-mops-request": "1" },
+      payload: { challengeId: (again.json() as { challengeId: string }).challengeId, code: authenticator.generate(adaSecret) },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ ok: true });
+    const auditDb = new Database(databasePath, { readonly: true, fileMustExist: true });
+    try {
+      const stored = auditDb.prepare("SELECT totp_secret FROM users WHERE email = ?").get("ada.admin@mops.example") as { totp_secret: string };
+      expect(stored.totp_secret).toBeTruthy();
+      expect(stored.totp_secret).not.toContain(adaSecret);
+      const audits = JSON.stringify(auditDb.prepare("SELECT * FROM audit_log").all());
+      expect(audits).not.toContain(adaSecret);
+    } finally {
+      auditDb.close();
+    }
+    const auditPath = join(dir, "audit.log");
+    if (existsSync(auditPath)) expect(readFileSync(auditPath, "utf8")).not.toContain(adaSecret);
     await app.close();
   }, 60_000);
 

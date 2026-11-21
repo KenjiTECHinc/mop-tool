@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { authenticator } from "otplib";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const dir = mkdtempSync(join(tmpdir(), "mops-auth-"));
@@ -11,7 +12,7 @@ process.env.TOTP_KEY = "test-totp-key-value-ok";
 process.env.AWS_BEARER_TOKEN_BEDROCK ??= "test-bedrock-token";
 process.env.BEDROCK_MODEL_ID ??= "test-model";
 
-const { hashPassword } = await import("./crypto.js");
+const { hashPassword, encryptSecret } = await import("./crypto.js");
 const { openDatabase, Store } = await import("../db/sqlite.js");
 const { loadConfig } = await import("../config.js");
 const { createBedrock } = await import("../aws.js");
@@ -104,7 +105,7 @@ describe("local auth", () => {
   });
 
   it("blocks T1 until a valid one-time code is provided", async () => {
-    const app = await buildApp(config, createBedrock(config));
+    const app = await buildApp({ ...config, DEMO_TOTP_BYPASS: false }, createBedrock(config));
     const login = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -122,18 +123,65 @@ describe("local auth", () => {
       payload: { challengeId: body.challengeId, code: "111111" },
     });
     expect(bad.statusCode).toBe(401);
-    const challengeId = new Store(openDatabase(config.DATABASE_PATH)).createChallenge("admin-1");
+
+    const secret = authenticator.generateSecret();
+    const current = authenticator.generate(secret);
+    const fresh = new Store(openDatabase(config.DATABASE_PATH));
+    const admin = await fresh.getUser("admin-1");
+    await fresh.putUser({ ...admin!, totpSecret: encryptSecret(secret, config.TOTP_KEY) });
+    const challengeId = fresh.createChallenge("admin-1");
+    if (current !== "000000") {
+      const demo = await app.inject({
+        method: "POST",
+        url: "/auth/mfa/verify",
+        headers: { "x-mops-request": "1" },
+        payload: { challengeId, code: "000000" },
+      });
+      expect(demo.statusCode).toBe(401);
+    }
     const good = await app.inject({
       method: "POST",
       url: "/auth/mfa/verify",
       headers: { "x-mops-request": "1" },
-      payload: { challengeId, code: "000000" },
+      payload: { challengeId: fresh.createChallenge("admin-1"), code: current },
     });
     expect(good.statusCode).toBe(200);
     const issued = setCookie(good);
     expect(issued).toContain("HttpOnly");
     expect(issued.toLowerCase()).toContain("samesite=strict");
     await app.close();
+  });
+
+  it("accepts 000000 only when DEMO_TOTP_BYPASS is on", async () => {
+    db.prepare("UPDATE users SET totp_secret = NULL WHERE user_id = 'admin-1'").run();
+    const off = await buildApp({ ...config, DEMO_TOTP_BYPASS: false }, createBedrock(config));
+    const offChallenge = new Store(openDatabase(config.DATABASE_PATH)).createChallenge("admin-1");
+    const rejected = await off.inject({
+      method: "POST",
+      url: "/auth/mfa/verify",
+      headers: { "x-mops-request": "1" },
+      payload: { challengeId: offChallenge, code: "000000" },
+    });
+    expect(rejected.statusCode).toBe(401);
+    await off.close();
+
+    const on = await buildApp({ ...config, DEMO_TOTP_BYPASS: true }, createBedrock(config));
+    const wrong = await on.inject({
+      method: "POST",
+      url: "/auth/mfa/verify",
+      headers: { "x-mops-request": "1" },
+      payload: { challengeId: new Store(openDatabase(config.DATABASE_PATH)).createChallenge("admin-1"), code: "111111" },
+    });
+    expect(wrong.statusCode).toBe(401);
+    const accepted = await on.inject({
+      method: "POST",
+      url: "/auth/mfa/verify",
+      headers: { "x-mops-request": "1" },
+      payload: { challengeId: new Store(openDatabase(config.DATABASE_PATH)).createChallenge("admin-1"), code: "000000" },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(setCookie(accepted)).toContain("HttpOnly");
+    await on.close();
   });
 });
 
