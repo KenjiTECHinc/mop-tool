@@ -6,6 +6,8 @@ An AI-assisted ticket desk. The React app, the API, SQLite, and login run on you
 
 Authorization is enforced in the API. The model never decides what a user may do, write tools only create a pending action, and ticket text is treated as untrusted data. Admin users do not receive ticket content, including in the audit log.
 
+<img width="116" height="54" alt="preview-vid" src="https://github.com/user-attachments/assets/d8b000fe-0f0f-46cb-8c1e-57ddd160fc4f" />
+
 ## Trust ladder
 
 - Level 1, this build: the assistant can read and propose. Every write waits for confirmation.
